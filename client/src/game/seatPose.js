@@ -5,25 +5,13 @@ const CLIMB_S = 0.55
 const HOP_HEIGHT = 0.8
 /** Side-to-side wiggle of the whole body while dancing, in radians. */
 const WIGGLE = 0.35
-/** A bite: hand to mouth, a few chews, hand back down. */
-const EAT_MS = 1000
+/** Stopping the clock: the hand goes up and slams down on the button. */
+const PRESS_MS = 420
 
 /**
- * Slapping the player beside you with your own hand: rise and lean over, wind the
- * arm up and out, whip it across into their cheek, then settle back into the chair.
- */
-export const SLAPPING_MS = 820
-/** When, as a fraction of SLAPPING_MS, the hand lands. */
-export const SLAP_IMPACT = 0.48
-export const SLAP_IMPACT_MS = Math.round(SLAPPING_MS * SLAP_IMPACT)
-const SLAP_HOLD = 0.62
-const LEAN = 0.6
-const RISE = 0.1
-const TURN = 1.05
-
-/**
- * Getting slapped: the head spins right round (twice, fast at first, slowing to a
- * stop facing front again) while the body is knocked away and eases back upright.
+ * Losing a round: the button zaps its player, whose head spins right round (twice,
+ * fast at first, slowing to a stop facing front again) while the body jolts aside
+ * and eases back upright.
  */
 const HIT_MS = 800
 const HIT_PEAK = 0.12
@@ -32,9 +20,9 @@ const HIT_TURN = 0.35
 const HEAD_SPINS = 2
 
 /**
- * The last slap knocks the player clean out of their chair: they fly off sideways
- * and back, spinning, land flat on their back, bounce once and lie there until the
- * server sends them to the lobby.
+ * Losing the duel: the chair ejects its player, who flies off sideways and back,
+ * spinning, lands flat on their back, bounces once and lies there until the server
+ * sends them to the lobby.
  */
 const FLY_MS = 820
 const FLY_DIST = 2.3
@@ -57,34 +45,19 @@ function progress(at, ms, now) {
   return t >= 0 && t <= 1 ? t : -1
 }
 
-/** Body envelope of a slap: up to full lean by the impact, a short hold, then back. */
-function slapEnvelope(p) {
-  if (p < SLAP_IMPACT) return smooth(p / SLAP_IMPACT)
-  if (p < SLAP_HOLD) return 1
-  return 1 - smooth((p - SLAP_HOLD) / (1 - SLAP_HOLD))
-}
-
 /** Knock envelope: snaps to 1 at the hit, then eases back with no wobble. */
 function hitEnvelope(t) {
   if (t < HIT_PEAK) return Math.sin((t / HIT_PEAK) * (Math.PI / 2))
   return 1 - smooth((t - HIT_PEAK) / (1 - HIT_PEAK))
 }
 
-/** Shortest signed angle from a to b. */
-function angleTo(a, b) {
-  let d = b - a
-  while (d > Math.PI) d -= Math.PI * 2
-  while (d < -Math.PI) d += Math.PI * 2
-  return d
-}
-
 /**
- * Knocked out of the chair (`ms` since the hit): position, spin and tilt of the
+ * Ejected from the chair (`ms` since it fired): position, spin and tilt of the
  * avatar's group, flying from the seated pose to lying on the floor. Writes `out`.
  */
 function flight(ms, fx, seat, out) {
   const t = Math.min(1, ms / FLY_MS)
-  // Away from the slapper and a little back from the table.
+  // Off to one side and a little back from the table.
   const ax = fx.ax
   const az = fx.az
   const d = FLY_DIST * easeOutCubic(t)
@@ -109,12 +82,10 @@ const _flight = { x: 0, y: 0, z: 0, yaw: 0, pitch: 0, landed: false }
  * clears. Shared by the local player and remote players so both look identical.
  *
  * Seated players also act out the duel, from liveState.actionFx (epoch ms):
- *   `eat`      - a bite: hand to mouth
- *   `slapping` - slapping the player beside them (`dx`, `dz`: towards them;
- *                `arm`: +1 right hand, -1 left)
- *   `slap`     - being slapped: the head spins (`side`: which way the hit knocks them)
- *   `fly`      - the last slap: knocked out of the chair (`ax`, `az`: which way)
- *   `danceAt`  - the winner waits until then to climb up and dance
+ *   `press`   - stopping the clock: the hand slams the button
+ *   `zap`     - lost a round: a jolt from the button (`side`: which way it knocks them)
+ *   `fly`     - lost the duel: ejected from the chair (`ax`, `az`: which way)
+ *   `danceAt` - the winner waits until then to climb up and dance
  *
  * @param {import('three').Object3D} visual the avatar's group (feet at its origin)
  * @param {import('three').Object3D|null} tag the name tag's group, lifted with them
@@ -126,19 +97,18 @@ const _flight = { x: 0, y: 0, z: 0, yaw: 0, pitch: 0, landed: false }
 export function poseAtSeat(visual, tag, seat, motion, delta, fx) {
   motion.speed = 0
   // Pitch and roll in the avatar's own frame, then the yaw: leaning back and
-  // tilting sideways work the same at every table round the ring.
+  // tilting sideways work the same at every table.
   if (visual.rotation.order !== 'YXZ') visual.rotation.order = 'YXZ'
   // The way the seated player faces (towards the table).
   const fx0 = Math.sin(seat.ry)
   const fz0 = Math.cos(seat.ry)
   const now = Date.now()
-  // Every slap of a knockout plays out in the chair before the winner climbs up.
+  // The winner climbs up once the loser's ejection has had its moment.
   const dancing = seat.dancing && now >= (fx?.danceAt || 0)
 
   if (!dancing) {
-    const eat = progress(fx?.eat, EAT_MS, now)
-    const slapping = progress(fx?.slapping, SLAPPING_MS, now)
-    const hit = progress(fx?.slap, HIT_MS, now)
+    const press = progress(fx?.press, PRESS_MS, now)
+    const hit = progress(fx?.zap, HIT_MS, now)
     const flying = fx?.fly && now >= fx.fly ? now - fx.fly : -1
     motion.danceT = null
     motion.dancing = false
@@ -153,31 +123,20 @@ export function poseAtSeat(visual, tag, seat, motion, delta, fx) {
     let pitch = 0
     let roll = 0
 
-    // Hand up to the mouth and back, with a couple of chews at the top.
-    motion.eat = eat < 0 ? 0 : Math.sin(Math.min(1, eat * 1.25) * Math.PI)
-    motion.chew = eat < 0 ? 0 : Math.sin(eat * Math.PI * 8)
+    // Hand up, then down hard on the button, with a little lean into it.
+    motion.press = press < 0 ? 0 : press < 0.45 ? smooth(press / 0.45) : 1 - smooth((press - 0.45) / 0.55) * 1.15
+    pitch += Math.max(0, motion.press) * 0.06
 
-    // Slapping: lean over towards the other player and turn to face them.
-    motion.slapPhase = slapping
-    motion.slapArm = fx?.arm ?? 1
-    if (slapping >= 0) {
-      const e = slapEnvelope(slapping)
-      x += fx.dx * LEAN * e
-      z += fx.dz * LEAN * e
-      y += RISE * e
-      yaw += angleTo(seat.ry, Math.atan2(fx.dx, fx.dz)) * (TURN / (Math.PI / 2)) * e
-    }
-
-    // Slapped: the head spins round, the body is knocked away then back upright.
+    // Zapped: the head spins round, the body is knocked away then back upright.
     const k = hit < 0 ? 0 : hitEnvelope(hit)
-    motion.slap = k
+    motion.zap = k
     motion.headSpin = hit < 0 ? 0 : (fx.side || 1) * Math.PI * 2 * HEAD_SPINS * easeOutCubic(hit)
     if (k > 0) {
       roll += fx.side * HIT_TILT * k
       yaw -= fx.side * HIT_TURN * k
     }
 
-    // The last slap: out of the chair, through the air and flat on the floor.
+    // Ejected: out of the chair, through the air and flat on the floor.
     if (flying >= 0) {
       flight(flying, fx, seat, _flight)
       x = _flight.x
@@ -189,8 +148,7 @@ export function poseAtSeat(visual, tag, seat, motion, delta, fx) {
       motion.seated = false
       motion.grounded = _flight.landed
       motion.down = _flight.landed
-      motion.slapPhase = -1
-      motion.eat = 0
+      motion.press = 0
     }
 
     visual.position.set(x, y, z)
@@ -202,10 +160,9 @@ export function poseAtSeat(visual, tag, seat, motion, delta, fx) {
     return
   }
 
-  motion.eat = 0
-  motion.slap = 0
+  motion.press = 0
+  motion.zap = 0
   motion.headSpin = 0
-  motion.slapPhase = -1
   motion.down = false
   motion.danceT = (motion.danceT ?? 0) + delta
   const t = Math.min(1, motion.danceT / CLIMB_S)
@@ -228,10 +185,9 @@ export function clearSeatPose(visual, tag, motion) {
   motion.seated = false
   motion.dancing = false
   motion.danceT = null
-  motion.eat = 0
-  motion.slap = 0
+  motion.press = 0
+  motion.zap = 0
   motion.headSpin = 0
-  motion.slapPhase = -1
   motion.down = false
   visual.position.set(0, 0, 0)
   visual.rotation.x = 0

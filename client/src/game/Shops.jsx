@@ -5,8 +5,8 @@ import {
   CanvasTexture,
   Color,
   MeshBasicMaterial,
-  Object3D,
   MeshLambertMaterial,
+  Object3D,
   RepeatWrapping,
   SRGBColorSpace,
 } from 'three'
@@ -15,27 +15,40 @@ import { useGame } from '../net/gameStore'
 import Auras from './Aura'
 import { useCulled } from './culling'
 import Instanced from './Instanced'
-import { mergedBoxes } from './instancing'
 import { Label } from './labels'
 import {
+  addFinishAttribute,
   createChairCushionGeometry,
   createChairFrameGeometry,
+  createChairMaterial,
+  createSnowGeometry,
+  createSnowMaterial,
   createThroneGemGeometry,
   createThroneGeometry,
   cushionColor,
+  setFinish,
 } from './furniture'
-import { CHAIR_SHOP, EMOTE_SHOP, RARITY_AURA, RARITY_COLORS, SHOP_CHAIRS } from './layout'
+import {
+  chairById,
+  RARITY_AURA,
+  RARITY_COLORS,
+  SHOWROOM,
+  SHOWROOM_CHAIRS,
+  STORE,
+  STORE_STATUE,
+} from './layout'
+import { STORE_ROOF_Y } from './lobby'
 import { useSettings } from './quality'
 import { useDisposable } from './useDisposable'
 
-/** Pink-and-white awning stripes, 64 px tall: tiny on the GPU. */
+/** Purple-and-white awning stripes, 16 px tall: tiny on the GPU. */
 function createStripeTexture() {
   const canvas = document.createElement('canvas')
   canvas.width = 128
   canvas.height = 16
   const ctx = canvas.getContext('2d')
   for (let i = 0; i < 8; i += 1) {
-    ctx.fillStyle = i % 2 ? '#ffffff' : '#ff4fb8'
+    ctx.fillStyle = i % 2 ? '#ffffff' : '#9b5cff'
     ctx.fillRect(i * 16, 0, 16, 16)
   }
   const tex = new CanvasTexture(canvas)
@@ -79,65 +92,88 @@ export function Sign({ lines, position, height = 0.6, scale = 1.6 }) {
 
 const PEDESTAL_TOP = 0.5
 const DISPLAY_SCALE = 1.35
+const STATUE_SCALE = 2.1
+
+/**
+ * Every display chair: the showroom's, each turning and floating over its pedestal,
+ * then the big one on the Store's roof, facing the square.
+ */
+const DISPLAYS = [
+  ...SHOWROOM_CHAIRS.map((c, i) => ({ chair: c, x: c.shop[0], y: PEDESTAL_TOP + 0.15, z: c.shop[1], spin: true, i })),
+  { chair: chairById(STORE_STATUE), x: STORE.x - 0.3, y: STORE_ROOF_Y, z: STORE.z, spin: false, i: 0 },
+]
+
 const _obj = new Object3D()
 const _color = new Color()
 
-/** Display chairs on the pedestals: each slowly turns and floats. One draw call. */
+/** The display chairs, in one draw call per part (frame, cushion, throne, jewels, snow). */
 function DisplayChairs() {
   const frameRef = useRef(null)
   const cushionRef = useRef(null)
   const throneRef = useRef(null)
   const gemRef = useRef(null)
+  const snowRef = useRef(null)
   const res = useDisposable(
     () => ({
-      frame: createChairFrameGeometry(),
+      frame: addFinishAttribute(createChairFrameGeometry(), DISPLAYS.length),
       cushion: createChairCushionGeometry(),
-      throne: createThroneGeometry(),
+      throne: addFinishAttribute(createThroneGeometry(), DISPLAYS.length),
       gems: createThroneGemGeometry(),
-      material: new MeshLambertMaterial({ color: '#ffffff' }),
+      snow: createSnowGeometry(),
+      material: createChairMaterial(),
+      cushionMaterial: new MeshLambertMaterial({ color: '#ffffff' }),
       gemMaterial: new MeshBasicMaterial({ color: '#ffffff' }),
+      snowMaterial: createSnowMaterial(),
     }),
     [],
   )
 
   useLayoutEffect(() => {
-    SHOP_CHAIRS.forEach((c, i) => {
+    DISPLAYS.forEach(({ chair: c }, i) => {
       frameRef.current.setColorAt(i, _color.set(c.color))
       cushionRef.current.setColorAt(i, _color.set(`#${cushionColor(c.color)}`))
       throneRef.current.setColorAt(i, _color.set(c.color))
       gemRef.current.setColorAt(i, _color.set(RARITY_COLORS[c.rarity]))
+      setFinish([res.frame, res.throne], i, c)
     })
     for (const r of [frameRef, cushionRef, throneRef, gemRef]) r.current.instanceColor.needsUpdate = true
-  }, [])
+  }, [res])
 
   useFrame(({ clock }) => {
     const t = clock.elapsedTime
-    SHOP_CHAIRS.forEach((c, i) => {
-      _obj.position.set(c.shop[0], PEDESTAL_TOP + 0.15 + Math.sin(t * 1.6 + i) * 0.08, c.shop[1])
-      _obj.rotation.set(0, t * 0.5 + i * 1.3, 0)
-      _obj.scale.setScalar(DISPLAY_SCALE)
+    DISPLAYS.forEach(({ chair: c, x, y, z, spin, i: k }, i) => {
+      _obj.position.set(x, y + Math.sin(t * 1.6 + k) * (spin ? 0.08 : 0.04), z)
+      // The roof chair faces the square (+X); a chair is modelled facing -Z.
+      _obj.rotation.set(0, spin ? t * 0.5 + k * 1.3 : -Math.PI / 2, 0)
+      _obj.scale.setScalar(spin ? DISPLAY_SCALE : STATUE_SCALE)
       _obj.updateMatrix()
       frameRef.current.setMatrixAt(i, _obj.matrix)
       cushionRef.current.setMatrixAt(i, _obj.matrix)
-      if (c.style !== 'throne') _obj.scale.setScalar(0)
+      const s = _obj.scale.x
+      _obj.scale.setScalar(c.style === 'throne' ? s : 0)
       _obj.updateMatrix()
       throneRef.current.setMatrixAt(i, _obj.matrix)
       gemRef.current.setMatrixAt(i, _obj.matrix)
+      _obj.scale.setScalar(c.style === 'snow' ? s : 0)
+      _obj.updateMatrix()
+      snowRef.current.setMatrixAt(i, _obj.matrix)
     })
-    for (const r of [frameRef, cushionRef, throneRef, gemRef]) r.current.instanceMatrix.needsUpdate = true
+    for (const r of [frameRef, cushionRef, throneRef, gemRef, snowRef]) r.current.instanceMatrix.needsUpdate = true
   })
 
+  const n = DISPLAYS.length
   return (
     <>
-      <instancedMesh ref={frameRef} args={[res.frame, res.material, SHOP_CHAIRS.length]} castShadow frustumCulled={false} />
-      <instancedMesh ref={cushionRef} args={[res.cushion, res.material, SHOP_CHAIRS.length]} frustumCulled={false} />
-      <instancedMesh ref={throneRef} args={[res.throne, res.material, SHOP_CHAIRS.length]} castShadow frustumCulled={false} />
-      <instancedMesh ref={gemRef} args={[res.gems, res.gemMaterial, SHOP_CHAIRS.length]} frustumCulled={false} />
+      <instancedMesh ref={frameRef} args={[res.frame, res.material, n]} castShadow frustumCulled={false} />
+      <instancedMesh ref={cushionRef} args={[res.cushion, res.cushionMaterial, n]} frustumCulled={false} />
+      <instancedMesh ref={throneRef} args={[res.throne, res.material, n]} castShadow frustumCulled={false} />
+      <instancedMesh ref={gemRef} args={[res.gems, res.gemMaterial, n]} frustumCulled={false} />
+      <instancedMesh ref={snowRef} args={[res.snow, res.snowMaterial, n]} frustumCulled={false} />
     </>
   )
 }
 
-const SHOP_AURAS = SHOP_CHAIRS.map((c) => ({
+const SHOWROOM_AURAS = SHOWROOM_CHAIRS.map((c) => ({
   x: c.shop[0],
   y: PEDESTAL_TOP,
   z: c.shop[1],
@@ -146,42 +182,34 @@ const SHOP_AURAS = SHOP_CHAIRS.map((c) => ({
 }))
 
 /**
- * The chair shop (an arc of pedestals on the east side of the plaza, each with a turning
- * chair in a glowing rarity aura) and the emote shop stall on the west side. Walk up
- * and press E — see InteractPrompt.
+ * The chair showroom (a horseshoe of pedestals on the east side of the square, each
+ * with a turning chair in a glowing rarity aura: walk up and press E to buy or equip
+ * it) and the Store on the west side (press E at its counter to open the shop, where
+ * every chair is on sale, including many you won't find in the showroom).
  */
 export function Shops() {
   const { shadows, particles } = useSettings()
 
   const res = useDisposable(() => {
     const stripes = createStripeTexture()
-    stripes.repeat.set(4, 1)
+    stripes.repeat.set(5, 1)
     return {
       stripes,
       box: new BoxGeometry(1, 1, 1),
       tinted: new MeshLambertMaterial({ color: '#ffffff' }),
-      stallWood: new MeshLambertMaterial({ color: '#8a5a3c' }),
-      stall: mergedBoxes([
-        // Counter, then four posts.
-        { size: [1.4, 1.1, 5], at: [0, 0.55, 0] },
-        ...[-0.6, 0.6].flatMap((x) => [-2.4, 2.4].map((z) => ({ size: [0.2, 3.1, 0.2], at: [x, 1.55, z] }))),
-      ]),
       awning: new MeshLambertMaterial({ map: stripes }),
-      awningGeometry: new BoxGeometry(2.6, 0.18, 5.8),
+      awningGeometry: new BoxGeometry(2.2, 0.16, 8.6),
     }
   }, [])
 
   // Two tiers: a stone base and a slab trimmed in the chair's rarity colour, each
-  // turned to face the fountain along the shop's arc.
+  // turned to face the middle of the horseshoe.
   const pedestals = useMemo(
     () =>
-      SHOP_CHAIRS.flatMap((c) => {
-        const ry = Math.atan2(-c.shop[0], -c.shop[1])
-        return [
-          { p: [c.shop[0], 0.19, c.shop[1]], s: [2, 0.38, 2], c: '#b9bec6', ry },
-          { p: [c.shop[0], 0.44, c.shop[1]], s: [1.7, 0.12, 1.7], c: RARITY_COLORS[c.rarity], ry },
-        ]
-      }),
+      SHOWROOM_CHAIRS.flatMap((c) => [
+        { p: [c.shop[0], 0.19, c.shop[1]], s: [2, 0.38, 2], c: '#b9bec6', ry: c.ry },
+        { p: [c.shop[0], 0.44, c.shop[1]], s: [1.7, 0.12, 1.7], c: RARITY_COLORS[c.rarity], ry: c.ry },
+      ]),
     [],
   )
 
@@ -189,29 +217,37 @@ export function Shops() {
     <>
       <Instanced geometry={res.box} material={res.tinted} items={pedestals} castShadow={shadows} receiveShadow />
       <DisplayChairs />
-      <Auras items={SHOP_AURAS} sparkles={particles} />
-      {SHOP_CHAIRS.map((c) => (
+      <Auras items={SHOWROOM_AURAS} sparkles={particles} />
+      {SHOWROOM_CHAIRS.map((c) => (
         <ChairLabel key={c.id} chair={c} />
       ))}
       <Sign
         lines={[
-          { text: 'CHAIRS 🪑', size: 56, color: '#4fd8ff' },
+          { text: 'CHAIR SHOWROOM 🪑', size: 52, color: '#4fd8ff' },
           { text: 'Walk up & press E', size: 26 },
+          { text: 'Even more chairs in the 🛒 STORE', size: 24, color: '#ffcf4a' },
         ]}
-        position={[CHAIR_SHOP.x, 5.2, CHAIR_SHOP.z]}
+        position={[SHOWROOM.x + SHOWROOM.radius + 1.2, 5.4, SHOWROOM.z]}
         height={0.7}
-        scale={2}
+        scale={2.2}
       />
 
-      <group position={[EMOTE_SHOP.x, 0, EMOTE_SHOP.z]}>
-        <mesh geometry={res.stall} material={res.stallWood} castShadow={shadows} receiveShadow />
-        <mesh geometry={res.awningGeometry} material={res.awning} position={[0.3, 3.15, 0]} rotation={[0, 0, -0.12]} castShadow={shadows} />
-      </group>
+      <mesh
+        geometry={res.awningGeometry}
+        material={res.awning}
+        position={[STORE.x + 2.95, STORE_ROOF_Y - 0.45, STORE.z]}
+        rotation={[0, 0, -0.32]}
+        castShadow={shadows}
+      />
       <Sign
-        lines={[{ text: 'Emote Shop 😡🥳', size: 48, color: '#e04dff' }]}
-        position={[EMOTE_SHOP.x, 4.3, EMOTE_SHOP.z]}
-        height={0.6}
-        scale={2}
+        lines={[
+          { text: 'STORE 🛒', size: 60, color: '#ffcf4a' },
+          { text: 'Chairs · Auras · Titles · Emotes', size: 24 },
+        ]}
+        // Above the roof chair's crest.
+        position={[STORE.x + 1, STORE_ROOF_Y + 5.7, STORE.z]}
+        height={0.75}
+        scale={2.2}
       />
     </>
   )

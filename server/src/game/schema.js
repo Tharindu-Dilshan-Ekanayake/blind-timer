@@ -4,8 +4,9 @@ const { schema, t } = require('@colyseus/schema')
  * Synchronised room state. Colyseus diffs it and sends only changed fields to every
  * client at the room's patch rate.
  *
- * Only public information lives here. Where each player hid their slaps, their duel
- * view and their profile (cash, inventory) go to that player alone as messages.
+ * Only public information lives here. The time each player stopped their clock (until
+ * the round is revealed), their duel view and their profile (cash, inventory) go to
+ * that player alone as messages.
  */
 
 const PlayerState = schema(
@@ -39,30 +40,36 @@ const PlayerState = schema(
 
 const TableState = schema(
   {
-    /** 'waiting' | 'countdown' | 'hiding' | 'eating' | 'ended' */
+    /** 'waiting' | 'countdown' | 'target' | 'running' | 'reveal' | 'ended' */
     phase: t.string(),
     /** Session ids in the two seats ('' when empty), and each one's equipped chair. */
     seat0: t.string(),
     seat1: t.string(),
     chair0: t.string(),
     chair1: t.string(),
-    /** Session id whose turn it is to eat. */
-    turn: t.string(),
-    /** Session id of the duel's winner while the result shows: they dance on their chair. */
+    /** Session id of the duel's winner while the result shows: they dance on the table. */
     winner: t.string(),
     /** Server epoch ms when the current phase times out (0 when it doesn't). */
     endsAt: t.float64(),
+    /** Server epoch ms when this round's clock starts (0 outside a round). */
+    startAt: t.float64(),
+    /** Round number (1-based), its target time and how long the clock shows, in ms. */
+    round: t.uint8(),
+    target: t.uint32(),
+    show: t.uint16(),
+    score0: t.uint8(),
+    score1: t.uint8(),
+    /** Each seat has stopped its clock this round (the time itself stays secret). */
+    stop0: t.boolean(),
+    stop1: t.boolean(),
     /**
-     * Each seat's plate, one character per chip (see Table.js): '0' uneaten, '1' eaten
-     * (safe), '2' a slap found, '3' the golden chip eaten. Public: everyone sees chips go.
+     * Each seat's stopped time once the round is revealed, in ms: -1 still secret,
+     * -2 never pressed.
      */
-    plate0: t.string(),
-    plate1: t.string(),
-    hearts0: t.uint8(),
-    hearts1: t.uint8(),
-    /** Where each seat hid its slaps (a base-36 cell per char), only once the duel has ended. */
-    shown0: t.string(),
-    shown1: t.string(),
+    time0: t.int32(),
+    time1: t.int32(),
+    /** Seat that won the round being revealed, -1 for a tie (or none). */
+    rwin: t.int8(),
   },
   'Table',
 )

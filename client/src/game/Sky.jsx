@@ -175,8 +175,18 @@ function buildCloudLayout(count) {
       scale: [size * 0.8, size * 0.65, size * 0.7],
     })
 
+    // Half drift above the island, half below it (clear of its rock), so it reads
+    // as floating in the sky.
+    const below = i % 2 === 1
+    let x = (rand() * 2 - 1) * 220
+    let z = (rand() * 2 - 1) * 260
+    const away = Math.hypot(x, z)
+    if (below && away < 60) {
+      x *= 60 / Math.max(away, 1)
+      z *= 60 / Math.max(away, 1)
+    }
     clouds.push({
-      position: [(rand() * 2 - 1) * 220, 36 + rand() * 16, (rand() * 2 - 1) * 260],
+      position: [x, below ? -24 + rand() * 10 : 36 + rand() * 16, z],
       rotationY: rand() * Math.PI,
       puffs,
     })

@@ -19,14 +19,15 @@ import {
   Z,
 } from './arch'
 import { fontReady, GAME_FONT } from './labels'
+import { DATA } from './layout'
 import { useDisposable } from './useDisposable'
 
 /**
- * The welcome gate over the spawn path, toy-brick carnival style.
+ * The welcome gate over the spawn path: slate and brass with crystal tips.
  *
  * The structure (plinths, banded pillars, beam, crown, flags) is plain boxes, added
  * to the world's shared scenery mesh by archBoxes() in arch.js, so it costs no draw
- * calls of its own. The marquee sign and the slap / chip pillar plaques are one mesh with
+ * calls of its own. The marquee sign and the stopwatch / target pillar plaques are one mesh with
  * one atlas texture: 1 draw call. The bulbs "chase" by swapping between two
  * pre-drawn textures a few times a second, so nothing is redrawn or re-uploaded
  * after start-up.
@@ -42,11 +43,10 @@ function roundRect(ctx, x, y, w, h, r) {
   ctx.closePath()
 }
 
+/** The title's fill: brass gold fading to crystal cyan. */
 function rainbow(ctx, x0, x1) {
   const g = ctx.createLinearGradient(x0, 0, x1, 0)
-  ;['#ff3b3b', '#ff9a1e', '#ffee32', '#3bff6f', '#33c8ff', '#b14dff'].forEach((c, i, a) =>
-    g.addColorStop(i / (a.length - 1), c),
-  )
+  ;['#ffd36b', '#ffb347', '#ff9ad5', '#7ff6ff'].forEach((c, i, a) => g.addColorStop(i / (a.length - 1), c))
   return g
 }
 
@@ -60,8 +60,8 @@ function drawAtlas(canvas, phase) {
   const h = BOARD_PX
   roundRect(ctx, 1, 1, w - 2, h - 2, 18)
   const bg = ctx.createLinearGradient(0, 0, 0, h)
-  bg.addColorStop(0, '#4a1f86')
-  bg.addColorStop(1, '#22104a')
+  bg.addColorStop(0, '#24306a')
+  bg.addColorStop(1, '#10163a')
   ctx.fillStyle = bg
   ctx.fill()
   ctx.lineWidth = 6
@@ -76,8 +76,8 @@ function drawAtlas(canvas, phase) {
     const on = (i++ + phase) % 2 === 0
     ctx.beginPath()
     ctx.arc(x, y, on ? 4.2 : 3.4, 0, Math.PI * 2)
-    ctx.fillStyle = on ? '#fff6b0' : '#8a6a2a'
-    ctx.shadowColor = on ? '#ffd23d' : 'transparent'
+    ctx.fillStyle = on ? '#c9fbff' : '#3a5a7a'
+    ctx.shadowColor = on ? '#5ff3ff' : 'transparent'
     ctx.shadowBlur = on ? 8 : 0
     ctx.fill()
   }
@@ -93,7 +93,7 @@ function drawAtlas(canvas, phase) {
   ctx.textAlign = 'center'
   ctx.textBaseline = 'middle'
   ctx.lineJoin = 'round'
-  const text = 'Slap Chips'
+  const text = DATA.title
   const tw = ctx.measureText(text).width
   ctx.lineWidth = size * 0.2
   ctx.strokeStyle = '#120720'
@@ -102,17 +102,17 @@ function drawAtlas(canvas, phase) {
   ctx.fillText(text, w / 2, h * 0.53)
   // Twinkling stars either side of the title.
   ctx.font = `700 ${Math.round(size * 0.7)}px ${GAME_FONT}`
-  ctx.fillStyle = phase ? '#ffe84d' : '#ffffff'
+  ctx.fillStyle = phase ? '#7ff6ff' : '#ffffff'
   ctx.fillText('★', w / 2 - tw / 2 - size * 0.55, h * 0.5)
-  ctx.fillStyle = phase ? '#ffffff' : '#ffe84d'
+  ctx.fillStyle = phase ? '#ffffff' : '#7ff6ff'
   ctx.fillText('★', w / 2 + tw / 2 + size * 0.55, h * 0.5)
 
-  // ---- Pillar plaques: a slap and a chip ----
+  // ---- Pillar plaques: a stopwatch and a target ----
   const py = BOARD_PX + 8
-  ;['🖐️', '🥔'].forEach((icon, k) => {
+  ;['⏱️', '🎯'].forEach((icon, k) => {
     const px = 8 + k * (PLAQUE_PX + 16)
     roundRect(ctx, px, py, PLAQUE_PX, PLAQUE_PX, 16)
-    ctx.fillStyle = k ? '#ffd92e' : '#ff5a5a'
+    ctx.fillStyle = k ? '#c27bff' : '#2fbfd8'
     ctx.fill()
     ctx.lineWidth = 6
     ctx.strokeStyle = '#1b1b1b'

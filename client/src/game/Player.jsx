@@ -5,7 +5,7 @@ import { Quaternion, Vector3 } from 'three'
 import { sfx } from '../audio/sfx'
 import { useGame } from '../net/gameStore'
 import { actionFx, avatarAnchors, localPlayer, SELF_ANCHOR, touchInput } from '../net/liveState'
-import { COLLIDERS, PLAYER_HEIGHT, WORLD_HALF } from './layout'
+import { COLLIDERS, PLAYER_HEIGHT, RAIL_RADIUS } from './layout'
 import Nametag from './Nametag'
 import PlayerAvatar from './PlayerAvatar'
 import { clearSeatPose, poseAtSeat } from './seatPose'
@@ -29,8 +29,8 @@ const _targetQuat = new Quaternion()
 const _up = new Vector3(0, 1, 0)
 
 /**
- * Pushes a circle of `RADIUS` at (pos.x, pos.z) out of every collider: turned boxes
- * (the tables around the ring, the boards) and circles (the fountain). The world is
+ * Pushes a circle of `RADIUS` at (pos.x, pos.z) out of every collider (turned boxes:
+ * the tables, the boards, the tower...) and keeps it inside the island's railing. The world is
  * a flat island with a handful of static shapes, so this replaces a full physics
  * engine (and its ~2 MB of WASM) with a few comparisons per frame.
  */
@@ -82,9 +82,13 @@ function resolveCollisions(pos) {
     pos.x = c.x + lx * c.c + lz * c.s
     pos.z = c.z - lx * c.s + lz * c.c
   }
-  const edge = WORLD_HALF - RADIUS
-  pos.x = Math.min(edge, Math.max(-edge, pos.x))
-  pos.z = Math.min(edge, Math.max(-edge, pos.z))
+  // The railing round the island's rim.
+  const edge = RAIL_RADIUS - RADIUS - 0.15
+  const r = Math.hypot(pos.x, pos.z)
+  if (r > edge) {
+    pos.x *= edge / r
+    pos.z *= edge / r
+  }
 }
 
 /**

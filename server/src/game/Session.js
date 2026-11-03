@@ -142,10 +142,8 @@ class Session {
         return this.onSit(msg, now)
       case 'leave':
         return this.seat?.table.leave(this, now)
-      case 'hide':
-        return this.seat?.table.hide(this, msg.cells, now)
-      case 'eat':
-        return this.seat?.table.eat(this, msg.cell, now)
+      case 'press':
+        return this.seat?.table.press(this, msg.ms, now)
       case 'emote':
         return this.onEmote(msg, now)
       case 'buy':

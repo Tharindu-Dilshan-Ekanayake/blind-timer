@@ -5,7 +5,7 @@ import { Vector3 } from 'three'
 import { usePlatform } from '../bloxity/platform'
 import { useGame } from '../net/gameStore'
 import { actionFx, localPlayer, SELF_ANCHOR } from '../net/liveState'
-import { TABLE, tableById, tableLocal } from './layout'
+import { seatSide, TABLE, tableById, tableLocal } from './layout'
 
 /** How high above the player's feet the camera aims. */
 const LOOK_HEIGHT = 2
@@ -35,16 +35,19 @@ const LOOK_SMOOTHING = 8
 const TABLE_SMOOTHING = 3
 
 /**
- * Seated view: across the table from the two players, high enough to see down onto
- * both plates of chips, with the players behind them.
+ * Seated view: over your shoulder, looking across the timer at your opponent, a
+ * little to your right so your own head doesn't hide the display.
  */
-const TABLE_CAM_BACK = 2.75
-const TABLE_CAM_HEIGHT = 2.75
-const TABLE_LOOK_HEIGHT = 1.0
-/** Where the view aims, in the table's frame (+Z is the players' side). */
-const TABLE_LOOK_Z = 0.5
-/** Looks higher (and from further back) while the winner dances up on the table. */
-const TABLE_LOOK_HEIGHT_WIN = 1.9
+const DUEL_CAM_BACK = 2
+const DUEL_CAM_HEIGHT = 2.75
+const DUEL_CAM_SIDE = 0.6
+/** Where the view aims: just past the timer, in the table's frame (towards the opponent). */
+const DUEL_LOOK_PAST = 0.45
+const DUEL_LOOK_HEIGHT = TABLE.height + 0.38
+/** After a win: from the opponent's end, looking at you dancing on the table. */
+const WIN_CAM_BACK = 2.9
+const WIN_CAM_HEIGHT = 2.5
+const WIN_LOOK_HEIGHT = 1.8
 /** Extra distance back on portrait screens. */
 const PORTRAIT_BACK = 0.9
 
@@ -55,7 +58,7 @@ const _target = new Vector3()
  * Third-person orbit camera that trails the local player.
  * Right-drag (mouse) or one-finger drag (touch) orbits; the wheel zooms.
  *
- * While the player is seated at a table it swings round to face both seats, the
+ * While the player is seated at a table it swings round behind their shoulder, the
  * duel view, and orbiting is disabled.
  */
 export function FollowCamera() {
@@ -146,15 +149,22 @@ export function FollowCamera() {
     const table = match && tableById(match.table)
 
     if (table) {
-      // A winner dancing up on the table is tall: step back so they fit in frame
-      // (once the dance starts: the last slaps are watched up close). A portrait
-      // screen is narrow: step back so both plates fit side by side.
+      // A winner dancing up on the table: swing round to their front once the dance
+      // starts. A portrait screen is narrow: step back so the timer and the opponent fit.
       const won = match.won && Date.now() >= (actionFx.get(SELF_ANCHOR)?.danceAt || 0)
       const portrait = size.height > size.width ? PORTRAIT_BACK : 0
-      const [cx, cz] = tableLocal(table, 0, won ? -3.9 : -TABLE_CAM_BACK - portrait)
-      const [lx, lz] = tableLocal(table, 0, won ? TABLE.seatZ * 0.7 : TABLE_LOOK_Z)
-      _desired.set(cx, won ? 2.4 : TABLE_CAM_HEIGHT + portrait * 0.5, cz)
-      _target.set(lx, won ? TABLE_LOOK_HEIGHT_WIN : TABLE_LOOK_HEIGHT, lz)
+      const side = seatSide(match.seat)
+      if (won) {
+        const [cx, cz] = tableLocal(table, 0, -side * WIN_CAM_BACK)
+        const [lx, lz] = tableLocal(table, 0, side * (TABLE.seatZ - 0.75))
+        _desired.set(cx, WIN_CAM_HEIGHT, cz)
+        _target.set(lx, WIN_LOOK_HEIGHT, lz)
+      } else {
+        const [cx, cz] = tableLocal(table, side * DUEL_CAM_SIDE, side * (TABLE.seatZ + DUEL_CAM_BACK + portrait))
+        const [lx, lz] = tableLocal(table, 0, -side * DUEL_LOOK_PAST)
+        _desired.set(cx, DUEL_CAM_HEIGHT + portrait * 0.5, cz)
+        _target.set(lx, DUEL_LOOK_HEIGHT, lz)
+      }
       const k = 1 - Math.pow(0.001, delta * (TABLE_SMOOTHING / 10) * 3)
       camera.position.lerp(_desired, k)
       lookAt.current.lerp(_target, k)

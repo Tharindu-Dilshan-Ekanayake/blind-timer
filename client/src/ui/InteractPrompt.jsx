@@ -38,14 +38,14 @@ function describe(target, { tables, profile }) {
     if (profile?.ownedChairs.includes(chair.id)) return { label: `Equip ${chair.name}`, enabled: true }
     return { label: `Buy ${chair.name} (${money(chair.price)})`, enabled: true }
   }
-  return { label: 'Emote Shop', enabled: true }
+  return { label: 'Open the Store 🛒', enabled: true }
 }
 
 function act(target) {
   const { profile, openModal } = useGame.getState()
   sfx.click()
   if (target.kind === 'table') send({ t: 'sit', table: target.id })
-  else if (target.kind === 'emoteShop') openModal('shop', 'emotes')
+  else if (target.kind === 'store') openModal('shop', 'chairs')
   else if (target.kind === 'chair') {
     if (profile?.ownedChairs.includes(target.id)) send({ t: 'equip', id: target.id })
     else send({ t: 'buy', kind: 'chair', id: target.id })
@@ -53,8 +53,8 @@ function act(target) {
 }
 
 /**
- * Roblox-style proximity prompt: walk up to a table, a shop chair or the emote stall
- * and press E (or tap the prompt on touch screens).
+ * Roblox-style proximity prompt: walk up to a table, a showroom chair or the Store's
+ * counter and press E (or tap the prompt on touch screens).
  *
  * Proximity is polled on a timer, not computed in the render loop, so moving around
  * re-renders this component only when the nearest target actually changes.

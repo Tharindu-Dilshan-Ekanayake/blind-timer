@@ -170,7 +170,7 @@ class GameRoom extends Room {
     void flushScores()
   }
 
-  /** Extra cash outside the win/loss rewards (the golden chip, a quitter's penalty). Returns it. */
+  /** Extra cash outside the win/loss rewards (a bullseye, a quitter's penalty). Returns it. */
   bonusCash(session, amount, now) {
     session.profile.cash += amount
     profiles.markDirty(session.profile)
@@ -202,7 +202,7 @@ class GameRoom extends Room {
   }
 
   /**
-   * Awards a win. `flawless`: won a finished duel without losing a heart.
+   * Awards a win. `flawless`: won a finished duel without losing a round.
    * Returns the cash granted.
    */
   recordWin(session, { flawless = false } = {}, now) {
@@ -257,11 +257,11 @@ class GameRoom extends Room {
    * A lost duel still pays a little (and XP), so every game moves you forward.
    * Quitting or timing out pays nothing. Returns the cash given.
    */
-  recordLoss(session, now, reason = 'slapped') {
+  recordLoss(session, now, reason = 'timer') {
     const p = session.profile
     p.streak = 0
     profiles.addQuestEvent(p, 'play', 1, now)
-    const finished = reason === 'slapped'
+    const finished = reason === 'timer'
     const cash = finished ? DATA.lossReward * (profiles.isWeekend(now) ? 2 : 1) : 0
     p.cash += cash
     profiles.markDirty(p)

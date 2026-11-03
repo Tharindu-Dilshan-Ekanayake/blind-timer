@@ -1,4 +1,5 @@
 {
+  "title": "Blind Stop",
   "bloxity": {
     "gameSlug": "slap-chips",
     "roomName": "game",
@@ -38,86 +39,154 @@
     ]
   },
   "roomSize": 20,
-  "chips": {
-    "cols": 3,
-    "rows": 3,
-    "slaps": 3,
-    "hearts": 3,
-    "goldenCash": 50
+  "timer": {
+    "winsNeeded": 2,
+    "maxRounds": 5,
+    "rounds": [
+      {
+        "min": 5,
+        "max": 9,
+        "show": 3
+      },
+      {
+        "min": 6,
+        "max": 12,
+        "show": 2
+      },
+      {
+        "min": 8,
+        "max": 15,
+        "show": 1
+      }
+    ],
+    "overSec": 5,
+    "lagMs": 300,
+    "bullseyeMs": 50,
+    "bullseyeCash": 50,
+    "closeMs": 250
   },
   "forfeit": {
-    "penalty": 50,
-    "slaps": 3,
-    "slapFirst": 0.4,
-    "slapGap": 1.05
+    "penalty": 50
   },
   "winReward": 200,
   "timing": {
     "countdown": 3,
-    "hide": 20,
-    "turn": 12,
+    "target": 3,
+    "reveal": 4,
     "results": 5,
-    "bite": 1.1,
-    "loserRespawn": 3.6
+    "loserRespawn": 3.4
   },
   "world": {
     "half": 31,
-    "spawn": [0, 0, 25.5]
+    "spawn": [
+      0,
+      0,
+      25.5
+    ]
   },
   "table": {
-    "width": 3.6,
-    "depth": 1.7,
+    "width": 1.5,
+    "depth": 1.9,
     "height": 0.82,
-    "seatX": 0.9,
-    "seatZ": 1.2,
-    "sitRange": 4
+    "seatZ": 1.3,
+    "sitRange": 3.6
   },
   "tables": [
-    { "id": 1, "x": 3.86, "z": 11.89, "ry": -2.8274 },
-    { "id": 2, "x": 10.11, "z": 7.35, "ry": -2.1991 },
-    { "id": 3, "x": 12.5, "z": 0, "ry": -1.5708 },
-    { "id": 4, "x": 10.11, "z": -7.35, "ry": -0.9425 },
-    { "id": 5, "x": 3.86, "z": -11.89, "ry": -0.3142 },
-    { "id": 6, "x": -3.86, "z": -11.89, "ry": 0.3142 },
-    { "id": 7, "x": -10.11, "z": -7.35, "ry": 0.9425 },
-    { "id": 8, "x": -12.5, "z": 0, "ry": 1.5708 },
-    { "id": 9, "x": -10.11, "z": 7.35, "ry": 2.1991 },
-    { "id": 10, "x": -3.86, "z": 11.89, "ry": 2.8274 }
+    {
+      "id": 1,
+      "x": -9,
+      "z": -12,
+      "ry": 1.5708
+    },
+    {
+      "id": 2,
+      "x": -9,
+      "z": -6,
+      "ry": 1.5708
+    },
+    {
+      "id": 3,
+      "x": -9,
+      "z": 0,
+      "ry": 1.5708
+    },
+    {
+      "id": 4,
+      "x": -9,
+      "z": 6,
+      "ry": 1.5708
+    },
+    {
+      "id": 5,
+      "x": -9,
+      "z": 12,
+      "ry": 1.5708
+    },
+    {
+      "id": 6,
+      "x": 9,
+      "z": -12,
+      "ry": 1.5708
+    },
+    {
+      "id": 7,
+      "x": 9,
+      "z": -6,
+      "ry": 1.5708
+    },
+    {
+      "id": 8,
+      "x": 9,
+      "z": 0,
+      "ry": 1.5708
+    },
+    {
+      "id": 9,
+      "x": 9,
+      "z": 6,
+      "ry": 1.5708
+    },
+    {
+      "id": 10,
+      "x": 9,
+      "z": 12,
+      "ry": 1.5708
+    }
   ],
   "leaderboards": [
     {
       "id": "levels",
       "title": "TOP LEVELS ⭐",
       "format": "level",
-      "x": 11.12,
-      "z": -21.83,
-      "ry": -0.4712
+      "x": 13.5,
+      "z": -22.5,
+      "ry": -0.2
     },
     {
       "id": "streaks",
       "title": "TOP STREAKS 🔥",
-      "x": 3.83,
-      "z": -24.2,
-      "ry": -0.1571
+      "x": 4.5,
+      "z": -22.5,
+      "ry": -0.05
     },
     {
       "id": "wins",
       "title": "TOP WINS 🏆",
-      "x": -3.83,
-      "z": -24.2,
-      "ry": 0.1571
+      "x": -4.5,
+      "z": -22.5,
+      "ry": 0.05
     },
     {
       "id": "playtime",
       "title": "MOST PLAYED ⏱️",
       "format": "duration",
-      "x": -11.12,
-      "z": -21.83,
-      "ry": 0.4712
+      "x": -13.5,
+      "z": -22.5,
+      "ry": 0.2
     }
   ],
-  "emoteShop": {
-    "x": -24,
+  "store": {
+    "x": -23,
     "z": 0
   },
   "chairs": [
@@ -126,7 +195,8 @@
       "name": "Basic",
       "rarity": "common",
       "price": 0,
-      "color": "#6b4329"
+      "color": "#6b4329",
+      "finish": "wood"
     },
     {
       "id": "metal",
@@ -134,7 +204,8 @@
       "rarity": "common",
       "price": 100,
       "color": "#8a96a8",
-      "shop": [16.97, 16.97]
+      "finish": "metal",
+      "lobby": true
     },
     {
       "id": "picnic",
@@ -142,7 +213,8 @@
       "rarity": "common",
       "price": 300,
       "color": "#e8504a",
-      "shop": [19.66, 13.77]
+      "finish": "paint",
+      "lobby": true
     },
     {
       "id": "nature",
@@ -150,7 +222,8 @@
       "rarity": "uncommon",
       "price": 800,
       "color": "#2fd14f",
-      "shop": [21.75, 10.14]
+      "finish": "paint",
+      "lobby": true
     },
     {
       "id": "candy",
@@ -158,7 +231,8 @@
       "rarity": "uncommon",
       "price": 1200,
       "color": "#ff7fc8",
-      "shop": [23.18, 6.21]
+      "finish": "paint",
+      "lobby": true
     },
     {
       "id": "storm",
@@ -166,7 +240,8 @@
       "rarity": "rare",
       "price": 2000,
       "color": "#7fe3ff",
-      "shop": [23.91, 2.09]
+      "finish": "glow",
+      "lobby": true
     },
     {
       "id": "ocean",
@@ -174,7 +249,8 @@
       "rarity": "rare",
       "price": 3000,
       "color": "#2f7dff",
-      "shop": [23.91, -2.09]
+      "finish": "paint",
+      "lobby": true
     },
     {
       "id": "lava",
@@ -182,7 +258,8 @@
       "rarity": "epic",
       "price": 5000,
       "color": "#ff5a1f",
-      "shop": [23.18, -6.21]
+      "finish": "glow",
+      "lobby": true
     },
     {
       "id": "golden",
@@ -191,7 +268,8 @@
       "price": 9000,
       "color": "#ffc93d",
       "style": "throne",
-      "shop": [21.75, -10.14]
+      "finish": "metal",
+      "lobby": true
     },
     {
       "id": "void",
@@ -200,7 +278,8 @@
       "price": 16000,
       "color": "#9b3dff",
       "style": "throne",
-      "shop": [19.66, -13.77]
+      "finish": "glow",
+      "lobby": true
     },
     {
       "id": "diamond",
@@ -209,20 +288,146 @@
       "price": 30000,
       "color": "#8ff4ff",
       "style": "throne",
-      "shop": [16.97, -16.97]
+      "finish": "gem",
+      "lobby": true
+    },
+    {
+      "id": "oak",
+      "name": "Oak Wood Chair",
+      "rarity": "common",
+      "price": 250,
+      "color": "#b5773e",
+      "finish": "wood"
+    },
+    {
+      "id": "bamboo",
+      "name": "Bamboo Chair",
+      "rarity": "common",
+      "price": 450,
+      "color": "#c8b45a",
+      "finish": "wood"
+    },
+    {
+      "id": "bronze",
+      "name": "Bronze Chair",
+      "rarity": "uncommon",
+      "price": 1000,
+      "color": "#c27a3a",
+      "finish": "metal"
+    },
+    {
+      "id": "silver",
+      "name": "Silver Chair",
+      "rarity": "rare",
+      "price": 2500,
+      "color": "#c3cad4",
+      "finish": "metal"
+    },
+    {
+      "id": "snow",
+      "name": "Snow Chair",
+      "rarity": "rare",
+      "price": 3500,
+      "color": "#bfe6ff",
+      "style": "snow",
+      "finish": "frost"
+    },
+    {
+      "id": "neon",
+      "name": "Neon Chair",
+      "rarity": "rare",
+      "price": 4000,
+      "color": "#39ff6a",
+      "finish": "glow"
+    },
+    {
+      "id": "gold",
+      "name": "Gold Chair",
+      "rarity": "epic",
+      "price": 6500,
+      "color": "#ffbf1f",
+      "finish": "metal"
+    },
+    {
+      "id": "emerald",
+      "name": "Emerald Chair",
+      "rarity": "epic",
+      "price": 7500,
+      "color": "#14c95f",
+      "finish": "gem"
+    },
+    {
+      "id": "ruby",
+      "name": "Ruby Chair",
+      "rarity": "epic",
+      "price": 8000,
+      "color": "#ff2448",
+      "finish": "gem"
+    },
+    {
+      "id": "frost",
+      "name": "Frost Throne",
+      "rarity": "legendary",
+      "price": 12000,
+      "color": "#9fdcff",
+      "style": "throne",
+      "finish": "frost"
+    },
+    {
+      "id": "sapphire",
+      "name": "Sapphire Chair",
+      "rarity": "legendary",
+      "price": 13000,
+      "color": "#2f6bff",
+      "finish": "gem"
+    },
+    {
+      "id": "platinum",
+      "name": "Platinum Chair",
+      "rarity": "legendary",
+      "price": 15000,
+      "color": "#e4e6ea",
+      "finish": "metal"
+    },
+    {
+      "id": "obsidian",
+      "name": "Obsidian Throne",
+      "rarity": "legendary",
+      "price": 20000,
+      "color": "#3a2d52",
+      "style": "throne",
+      "finish": "gem"
+    },
+    {
+      "id": "plat_throne",
+      "name": "Platinum Throne",
+      "rarity": "mythic",
+      "price": 40000,
+      "color": "#eef1f5",
+      "style": "throne",
+      "finish": "metal"
+    },
+    {
+      "id": "galaxy",
+      "name": "Galaxy Throne",
+      "rarity": "mythic",
+      "price": 60000,
+      "color": "#6a3dff",
+      "style": "throne",
+      "finish": "glow"
     }
   ],
   "emotes": [
     {
       "id": "yum",
-      "label": "YUM",
-      "icon": "😋",
+      "label": "TICK TOCK",
+      "icon": "⏰",
       "price": 0
     },
     {
       "id": "ouch",
-      "label": "OUCH",
-      "icon": "😵",
+      "label": "SO CLOSE",
+      "icon": "😬",
       "price": 0
     },
     {
@@ -317,14 +522,14 @@
     },
     {
       "id": "crunchy",
-      "label": "SO CRUNCHY",
-      "icon": "🥔",
+      "label": "PERFECT",
+      "icon": "🎯",
       "price": 1200
     },
     {
       "id": "spicy",
-      "label": "TOO SPICY",
-      "icon": "🌶️",
+      "label": "TOO SLOW",
+      "icon": "🐢",
       "price": 3500
     }
   ],
@@ -390,7 +595,7 @@
     },
     {
       "id": "flawless",
-      "label": "Win Without Losing A Heart",
+      "label": "Win A Duel 2 - 0",
       "event": "flawless",
       "goal": 1,
       "reward": 800
@@ -403,18 +608,18 @@
       "reward": 900
     },
     {
-      "id": "crunch10",
-      "label": "Eat 10 Safe Chips",
-      "event": "crunch",
-      "goal": 10,
-      "reward": 400
+      "id": "close5",
+      "label": "Stop Within 0.25s, 5 Times",
+      "event": "close",
+      "goal": 5,
+      "reward": 600
     },
     {
-      "id": "golden1",
-      "label": "Find A Golden Chip",
-      "event": "golden",
+      "id": "bullseye1",
+      "label": "Hit A Bullseye (±0.05s)",
+      "event": "bullseye",
       "goal": 1,
-      "reward": 600
+      "reward": 1000
     },
     {
       "id": "emote5",
@@ -510,25 +715,25 @@
   "titles": [
     {
       "id": "t_rookie",
-      "name": "Chip Rookie",
+      "name": "Clock Rookie",
       "color": "#c8d0dc",
       "level": 5
     },
     {
       "id": "t_ninja",
-      "name": "Crunch Ninja",
+      "name": "Tick Ninja",
       "color": "#5cff5c",
       "level": 10
     },
     {
       "id": "t_reader",
-      "name": "Slap Dodger",
+      "name": "Time Reader",
       "color": "#4fd8ff",
       "level": 20
     },
     {
       "id": "t_master",
-      "name": "Chip Master",
+      "name": "Time Master",
       "color": "#ffb21e",
       "level": 35
     },
@@ -540,35 +745,35 @@
     },
     {
       "id": "t_lucky",
-      "name": "Lucky Muncher",
+      "name": "Lucky Guess",
       "color": "#7dff3a",
       "price": 500,
       "rarity": "common"
     },
     {
       "id": "t_brain",
-      "name": "Snack Attack",
+      "name": "Second Hand",
       "color": "#ff7fc8",
       "price": 2000,
       "rarity": "uncommon"
     },
     {
       "id": "t_pro",
-      "name": "Iron Cheeks",
+      "name": "Steady Hands",
       "color": "#2f9bff",
       "price": 4000,
       "rarity": "rare"
     },
     {
       "id": "t_psychic",
-      "name": "Slap Psychic",
+      "name": "Clock Psychic",
       "color": "#b44dff",
       "price": 10000,
       "rarity": "epic"
     },
     {
       "id": "t_oracle",
-      "name": "The Untouchable",
+      "name": "Human Stopwatch",
       "color": "#ffd23d",
       "price": 25000,
       "rarity": "legendary",

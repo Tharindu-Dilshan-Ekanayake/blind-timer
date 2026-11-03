@@ -524,38 +524,6 @@ function rotateBone(rig, name, which, angle) {
   entry.bone.quaternion.multiply(_animQ.setFromAxisAngle(axis, angle))
 }
 
-/**
- * The slapping arm through a slap (`p` 0..1, see seatPose): from resting on the
- * table, wound up high above the shoulder with the elbow bent, whipped down and
- * across into the other player's cheek at face height (the body is turned towards
- * them), a short follow-through across the body, then back to the table. `swing`
- * is forward (-) / back (+), `out` is away from the body (- is across it), `elbow`
- * bends the forearm forward (-).
- */
-const SLAP_KEYS = [
-  { at: 0, rest: true, swing: 0, out: 0, elbow: 0 },
-  { at: 0.34, swing: -2.7, out: 0.9, elbow: -1.25 },
-  { at: 0.48, swing: -2.08, out: 0.12, elbow: -0.05 },
-  { at: 0.62, swing: -1.6, out: -0.2, elbow: -0.3 },
-  { at: 1, rest: true, swing: 0, out: 0, elbow: 0 },
-]
-/** Written by slapArmPose (no allocation per frame). */
-const _slapPose = { swing: 0, out: 0, elbow: 0 }
-
-function slapArmPose(p, rest) {
-  let i = 0
-  while (i < SLAP_KEYS.length - 2 && p > SLAP_KEYS[i + 1].at) i += 1
-  const a = SLAP_KEYS[i]
-  const b = SLAP_KEYS[i + 1]
-  const t = smoothstep((p - a.at) / (b.at - a.at))
-  const as = a.rest ? rest : a.swing
-  const bs = b.rest ? rest : b.swing
-  _slapPose.swing = as + (bs - as) * t
-  _slapPose.out = a.out + (b.out - a.out) * t
-  _slapPose.elbow = a.elbow + (b.elbow - a.elbow) * t
-  return _slapPose
-}
-
 /** Swing a limb forward/back - the plane a walk cycle actually moves in. */
 const swing = (rig, name, angle) => rotateBone(rig, name, 'axisX', angle)
 /** Sway a limb out to the side. */
@@ -568,12 +536,11 @@ const turn = (rig, name, angle) => rotateBone(rig, name, 'axisY', angle)
  *
  * @param {object} rig from `collectRig`
  * @param {{ time: number, speed: number, grounded: boolean, maxSpeed: number, seated?: boolean,
- *           dancing?: boolean, eat?: number, chew?: number, slap?: number, headSpin?: number,
- *           down?: boolean, slapPhase?: number, slapArm?: number }} motion
- *   At a table: `eat` (0..1) lifts the hand to the mouth, `chew` (-1..1) nods with
- *   each chew, `slap` (0..1) knocks the chin back, `headSpin` (radians) spins the
- *   head after a slap, `slapPhase` (0..1, -1 when not slapping) swings the `slapArm`
- *   (+1 right, -1 left) through a slap, and `down` lies knocked out on the floor.
+ *           dancing?: boolean, press?: number, zap?: number, headSpin?: number,
+ *           down?: boolean }} motion
+ *   At a table: `press` lifts the right hand (1) and slams it down on the button (a
+ *   little below 0), `zap` (0..1) knocks the chin back, `headSpin` (radians) spins
+ *   the head after a zap, and `down` lies flat on the floor after an ejection.
  *   `speed` is horizontal speed in world units/sec; `maxSpeed` is what counts as a
  *   full-amplitude run, so the cycle scales smoothly from a walk to a sprint.
  */
@@ -603,7 +570,7 @@ export function animateRig(rig, motion) {
   rig.root.position.y = rig.rootRestY
   const headSpin = motion.headSpin || 0
 
-  // --- Knocked out of the chair: flat on the floor, arms and legs flung out ----
+  // --- Ejected from the chair: flat on the floor, arms and legs flung out ------
   if (motion.down) {
     sway(rig, 'ArmL1', 1.35)
     sway(rig, 'ArmR1', -1.35)
@@ -640,51 +607,28 @@ export function animateRig(rig, motion) {
   // Negative swing is forward for a limb hanging down (see rotateBone); the knee
   // undoes the thigh's rotation so the shin hangs vertically again.
   if (seated) {
-    const { eat = 0, chew = 0, slap = 0, slapPhase = -1, slapArm = 1 } = motion
+    const { press = 0, zap = 0 } = motion
     swing(rig, 'LegL1', -1.5)
     swing(rig, 'LegR1', -1.5)
     swing(rig, 'LegL2', 1.5)
     swing(rig, 'LegR2', 1.5)
 
-    // Hands rest on the table.
+    // Hands rest on the table; stopping the clock, the right one rises and slams
+    // down on the button in front of them.
     const rest = -0.85
-    let lSwing = rest
-    let lOut = 0
-    let lElbow = 0
-    // Taking a bite: the right hand comes up to the mouth (inward is the opposite of
-    // out), the head nods with each chew.
-    let rSwing = rest - eat * 1.35
-    let rOut = -eat * 0.3
-    let rElbow = -eat * 1.55
-    if (slapPhase >= 0) {
-      const pose = slapArmPose(slapPhase, rest)
-      if (slapArm > 0) {
-        rSwing = pose.swing
-        rOut = pose.out
-        rElbow = pose.elbow
-      } else {
-        lSwing = pose.swing
-        lOut = pose.out
-        lElbow = pose.elbow
-      }
-    }
-    swing(rig, 'ArmL1', lSwing)
-    // Outward is positive sway for the left arm, negative for the right.
-    sway(rig, 'ArmL1', lOut)
-    swing(rig, 'ArmL2', lElbow)
-    swing(rig, 'ArmR1', rSwing)
-    sway(rig, 'ArmR1', -rOut)
-    swing(rig, 'ArmR2', rElbow)
+    swing(rig, 'ArmL1', rest)
+    swing(rig, 'ArmR1', rest - press * 1.1)
+    swing(rig, 'ArmR2', -Math.max(0, press) * 0.9)
 
-    // Slapped: the head spins right round, chin knocked up and back.
+    // Zapped: the head spins right round, chin knocked up and back.
     turn(rig, 'Neck1', headSpin)
-    swing(rig, 'Neck1', eat * chew * 0.12 - slap * 0.22)
+    swing(rig, 'Neck1', -zap * 0.22)
     swing(rig, 'Spine1', Math.sin(time * 1.6) * 0.02)
     return
   }
 
   // --- Airborne: tuck the legs, throw the arms up ---------------------------
-  // (Also flying out of the chair after the last slap, head still spinning.)
+  // (Also flying out of the chair after an ejection.)
   if (!grounded) {
     swing(rig, 'LegL1', -0.55)
     swing(rig, 'LegL2', 0.75)

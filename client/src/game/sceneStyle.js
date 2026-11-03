@@ -1,22 +1,23 @@
 /**
- * The scene's whole look in one place: a bright toy-brick world with a blue sky
- * warming to peach at the horizon, a grassy studded baseplate and orange wooden fences.
+ * The scene's whole look in one place: an island floating above the clouds at
+ * sunset. A violet sky glowing orange at the horizon, lavender flagstones, brass
+ * railings and gears, and warm low sunlight.
  *
  * Colours are sRGB hex, exactly as you would pick them in an image editor.
  *
  * Light intensities are three.js physical units: a light of intensity PI (~3.14)
  * lights a surface facing it to its full texture colour. The hemisphere fill plus the
- * sun add up to just over that on the ground, which is what keeps the greens vivid;
- * shadowed ground only gets the fill, so shadows read as a softer, darker green.
+ * sun add up to just over that on the ground; shadowed ground only gets the fill, so
+ * shadows read as a softer, cooler violet.
  */
 
 export const SKY = {
-  /** Straight up. */
-  top: '#3b86ee',
-  /** At eye level: a warm peach glow. Fog uses the same colour so distant ground melts into the sky. */
-  horizon: '#ffd9c0',
-  /** Lower = the deep blue reaches further down towards the horizon. */
-  exponent: 0.42,
+  /** Straight up: deep dusk violet. */
+  top: '#3d2c8d',
+  /** At eye level: a warm sunset glow. Fog uses the same colour so distant things melt into the sky. */
+  horizon: '#ffc29a',
+  /** Lower = the violet reaches further down towards the horizon. */
+  exponent: 0.55,
 }
 
 /** Haze at the horizon. Distances scale with the quality preset's view distance. */
@@ -27,43 +28,47 @@ export const FOG = {
 }
 
 export const CLOUDS = {
-  /** Sunlit tops. */
-  top: '#ffffff',
-  /** Undersides, a cool blue-grey. */
-  bottom: '#cfdff2',
+  /** Sunlit tops, warm from the low sun. */
+  top: '#fff4ea',
+  /** Undersides, a soft lavender. */
+  bottom: '#d5bfe9',
   count: 18,
 }
 
-/** The sea around the island; fog at the horizon blends it into the sky. */
-export const OCEAN = {
-  color: '#2bbff2',
+/** The sea of clouds far below the island; the fog blends it into the sky. */
+export const CLOUD_SEA = {
+  base: '#f1dcf2',
+  puff: '#fff7f0',
+  y: -32,
 }
 
-/** Fresh grass baseplate, two shades in a checker. */
+/** The island's flagstones, two shades of lavender stone. */
 export const GROUND = {
-  base: '#5ed94a',
-  alt: '#54cb41',
+  base: '#a9a2c6',
+  alt: '#9d96bb',
 }
 
-/** Tan checker brick for the boundary walls. */
-export const WALLS = {
-  base: '#c4955c',
-  alt: '#a3774a',
+/** The island's rocky underside: a stone band at the top, darker towards the tip. */
+export const ROCK = {
+  rim: '#857da3',
+  mid: '#6b5d86',
+  deep: '#43375c',
 }
 
-export const FENCE = {
-  rail: '#c8662e',
-  post: '#a8501f',
+export const BRASS = {
+  rail: '#e2ad45',
+  post: '#4a4560',
+  gear: '#d9a441',
 }
 
 export const LIGHTS = {
-  /** Fill from above (sky) and below (bounce off the grass). */
-  hemiSky: '#ffffff',
-  hemiGround: '#b7c9a3',
-  hemiIntensity: 2.1,
+  /** Fill from above (warm sky) and below (bounce off the lavender stone). */
+  hemiSky: '#fff0e0',
+  hemiGround: '#8a76b0',
+  hemiIntensity: 2.0,
 
-  sunColor: '#fff6e8',
-  sunIntensity: 1.7,
+  sunColor: '#ffd9a6',
+  sunIntensity: 1.8,
   /**
    * Direction *towards* the sun: high and a little to the left, behind the default
    * camera, so the side of the character you look at is lit and its shadow falls
