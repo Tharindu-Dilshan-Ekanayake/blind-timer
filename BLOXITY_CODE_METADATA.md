@@ -1,5 +1,5 @@
 ---
-gameSlug: slap-chips
+gameSlug: blind-timer
 clientDir: client
 buildCommand: npm ci && npm run build
 distDir: client/dist

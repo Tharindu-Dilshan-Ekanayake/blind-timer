@@ -30,3 +30,8 @@ export function send(msg) {
 export function retryConnection() {
   socket?.retryConnection()
 }
+
+/** "I'm here!": tells the server the player is back (see socket.reportActivity). */
+export function reportActivity() {
+  socket?.reportActivity()
+}

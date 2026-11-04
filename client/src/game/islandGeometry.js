@@ -1,4 +1,5 @@
 import {
+  BoxGeometry,
   BufferAttribute,
   CanvasTexture,
   Color,
@@ -84,21 +85,33 @@ export function createIslandRockGeometry() {
   return geometry
 }
 
-/** Two brass rails round the island at `radius`, lying flat, in one geometry. */
-export function createRailGeometry(radius) {
-  const rings = [0.62, 1.12].map((y) => new TorusGeometry(radius, y > 1 ? 0.075 : 0.055, 6, 128).rotateX(Math.PI / 2).translate(0, y, 0))
-  const merged = mergeGeometries(rings)
-  for (const g of rings) g.dispose()
-  return merged
+/** Paints every vertex of `geometry` one colour (a vertex colour attribute). */
+function painted(geometry, hex) {
+  const c = new Color(hex)
+  const count = geometry.getAttribute('position').count
+  const colors = new Float32Array(count * 3)
+  for (let i = 0; i < count; i += 1) colors.set([c.r, c.g, c.b], i * 3)
+  geometry.setAttribute('color', new BufferAttribute(colors, 3))
+  return geometry
 }
 
-/** Rail posts every ~3 units round the circle. */
-export function railPosts(radius) {
+/**
+ * The railing round the island at `radius`: two brass rails lying flat and a dark
+ * post every ~3 units, in one vertex-coloured geometry (one draw call).
+ */
+export function createRailingGeometry(radius, railHex, postHex) {
+  const parts = [0.62, 1.12].map((y) =>
+    painted(new TorusGeometry(radius, y > 1 ? 0.075 : 0.055, 6, 128).rotateX(Math.PI / 2).translate(0, y, 0), railHex),
+  )
   const count = Math.round((Math.PI * 2 * radius) / 3)
-  return Array.from({ length: count }, (_, i) => {
+  for (let i = 0; i < count; i += 1) {
     const a = (i / count) * Math.PI * 2
-    return { p: [Math.sin(a) * radius, 0.6, Math.cos(a) * radius], ry: a }
-  })
+    const post = new BoxGeometry(0.2, 1.2, 0.2).rotateY(a).translate(Math.sin(a) * radius, 0.6, Math.cos(a) * radius)
+    parts.push(painted(post, postHex))
+  }
+  const merged = mergeGeometries(parts)
+  for (const g of parts) g.dispose()
+  return merged
 }
 
 /**

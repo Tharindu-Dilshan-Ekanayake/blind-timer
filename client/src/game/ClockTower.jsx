@@ -2,6 +2,7 @@ import { useFrame } from '@react-three/fiber'
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import {
   BoxGeometry,
+  BufferAttribute,
   CanvasTexture,
   Color,
   ConeGeometry,
@@ -95,11 +96,29 @@ function createFacesGeometry() {
   return merged.translate(TOWER.x, CLOCK.y, TOWER.z)
 }
 
-/** Roof cone (turned so its four sides line up with the walls) and the jewel on top. */
+/** `geometry` (non-indexed) painted one colour. */
+function painted(geometry, hex) {
+  _color.set(hex)
+  const count = geometry.getAttribute('position').count
+  const colors = new Float32Array(count * 3)
+  for (let i = 0; i < count; i += 1) colors.set([_color.r, _color.g, _color.b], i * 3)
+  geometry.setAttribute('color', new BufferAttribute(colors, 3))
+  return geometry
+}
+
+/**
+ * The red roof cone (turned so its four sides line up with the walls) and the gold
+ * jewel above it, in one geometry: one draw call.
+ */
 function createRoofGeometry() {
-  const cone = new ConeGeometry(CLOCK.roomSize * 0.78, ROOF_H, 4, 1).rotateY(Math.PI / 4)
-  cone.translate(0, CLOCK.y + CLOCK.roomHeight / 2 + 0.15 + ROOF_H / 2, 0)
-  return cone.translate(TOWER.x, 0, TOWER.z)
+  const roofBase = CLOCK.y + CLOCK.roomHeight / 2 + 0.15
+  const cone = new ConeGeometry(CLOCK.roomSize * 0.78, ROOF_H, 4, 1).rotateY(Math.PI / 4).toNonIndexed()
+  cone.translate(0, roofBase + ROOF_H / 2, 0)
+  const jewel = new OctahedronGeometry(0.42, 0).translate(0, roofBase + ROOF_H + 0.3, 0)
+  const merged = mergeGeometries([painted(cone, '#e8343c'), painted(jewel, '#ffe84d')])
+  cone.dispose()
+  jewel.dispose()
+  return merged.translate(TOWER.x, 0, TOWER.z)
 }
 
 export function ClockTower() {
@@ -121,9 +140,7 @@ export function ClockTower() {
       hand: new BoxGeometry(1, 1, 0.03).translate(0, 0.42, 0),
       handMaterial: new MeshBasicMaterial({ color: '#ffffff' }),
       roof: createRoofGeometry(),
-      roofMaterial: new MeshLambertMaterial({ color: '#e8343c' }),
-      jewel: new OctahedronGeometry(0.42, 0),
-      jewelMaterial: new MeshBasicMaterial({ color: '#ffe84d' }),
+      roofMaterial: new MeshLambertMaterial({ vertexColors: true }),
     }
   }, [])
 
@@ -185,11 +202,6 @@ export function ClockTower() {
         frustumCulled={false}
       />
       <mesh geometry={res.roof} material={res.roofMaterial} castShadow={shadows} />
-      <mesh
-        geometry={res.jewel}
-        material={res.jewelMaterial}
-        position={[TOWER.x, CLOCK.y + CLOCK.roomHeight / 2 + 0.15 + ROOF_H + 0.3, TOWER.z]}
-      />
     </>
   )
 }

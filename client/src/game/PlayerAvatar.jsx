@@ -7,6 +7,7 @@ import { clone as cloneSkeleton } from 'three/examples/jsm/utils/SkeletonUtils.j
 import {
   assetUrls,
   baseBodyUrl,
+  HAT_BONE,
   isRealId,
   ITEM_SLOTS,
   PART_SLOTS,
@@ -323,6 +324,10 @@ export const PlayerAvatar = forwardRef(function PlayerAvatar(
   useEffect(() => {
     proportionsRef.current = custom ? DEFAULT_PROPORTIONS : proportions
   }, [custom, proportions])
+  const equippedRef = useRef(equipped)
+  useEffect(() => {
+    equippedRef.current = equipped
+  }, [equipped])
 
   useFrame((_state, delta) => {
     // Culled or LOD-swapped avatars skip their bone work entirely.
@@ -337,6 +342,7 @@ export const PlayerAvatar = forwardRef(function PlayerAvatar(
         motion.emote.done = true
       }
       updateFollowers(rig, followers.current)
+      if (motionRef?.current) trackHeadTop(rig, motionRef.current, equippedRef.current)
     } catch {
       // A malformed payload must not kill the render loop.
     }
@@ -359,5 +365,30 @@ export const PlayerAvatar = forwardRef(function PlayerAvatar(
 })
 
 useGLTF.preload(baseBodyUrl())
+
+/**
+ * The top of the head above the head bone, in that bone's own units: measured on
+ * player.glb's skinned mesh (1.67-1.76 across short, normal and tall proportions).
+ */
+const HEAD_TOP_LOCAL = 1.72
+/** Extra height (world units) for a hat or hair worn on top of the head. */
+const HAT_EXTRA = 0.32
+const HAIR_EXTRA = 0.12
+const _headTop = new Vector3()
+
+/**
+ * Writes where the top of this avatar's head is (world y) into `motion.headTop`,
+ * with the time in `motion.headAt`, so its name tag can float just above it, however
+ * tall the player made their avatar, whatever they wear, sitting or dancing.
+ */
+function trackHeadTop(rig, motion, equipped) {
+  const head = rig.bones[HAT_BONE]?.bone
+  if (!head || !motion) return
+  head.updateWorldMatrix(true, false)
+  _headTop.set(0, HEAD_TOP_LOCAL, 0).applyMatrix4(head.matrixWorld)
+  const worn = (id) => isRealId(id) && String(id) !== '0'
+  motion.headTop = _headTop.y + (worn(equipped?.hatId) ? HAT_EXTRA : worn(equipped?.hairId) ? HAIR_EXTRA : 0)
+  motion.headAt = performance.now()
+}
 
 export default PlayerAvatar

@@ -1,7 +1,6 @@
 import { useFrame } from '@react-three/fiber'
-import { useLayoutEffect, useMemo, useRef } from 'react'
+import { useLayoutEffect, useRef } from 'react'
 import {
-  BoxGeometry,
   CircleGeometry,
   Color,
   DoubleSide,
@@ -11,16 +10,14 @@ import {
   Object3D,
 } from 'three'
 
-import Instanced from './Instanced'
 import {
   createCloudSeaTexture,
   createCrystalGeometry,
   createGearGeometry,
   createIslandRockGeometry,
-  createRailGeometry,
+  createRailingGeometry,
   crystalItems,
   GEAR_ITEMS,
-  railPosts,
 } from './islandGeometry'
 import { CRYSTALS, ISLAND_RADIUS, PLANTERS, RAIL_RADIUS, SKY_ISLANDS } from './layout'
 import { useSettings } from './quality'
@@ -30,7 +27,7 @@ import { useDisposable } from './useDisposable'
 /**
  * Everything that makes the map a floating island: its rocky underside and the
  * little islands drifting round it (1 draw call), the brass railing round its rim
- * (2), the giant gears turning at its edge (1), the glowing crystals (1) and the sea
+ * (1), the giant gears turning at its edge (1), the glowing crystals (1) and the sea
  * of clouds far below (1).
  */
 
@@ -64,10 +61,8 @@ export function Island() {
       sea,
       rock: createIslandRockGeometry(),
       rockMaterial: new MeshLambertMaterial({ vertexColors: true, side: DoubleSide }),
-      rail: createRailGeometry(RAIL_RADIUS),
-      railMaterial: new MeshPhongMaterial({ color: BRASS.rail, shininess: 70, specular: '#fff2c0' }),
-      post: new BoxGeometry(0.2, 1.2, 0.2),
-      postMaterial: new MeshLambertMaterial({ color: BRASS.post }),
+      railing: createRailingGeometry(RAIL_RADIUS, BRASS.rail, BRASS.post),
+      railingMaterial: new MeshPhongMaterial({ vertexColors: true, shininess: 70, specular: '#fff2c0' }),
       gear: createGearGeometry(),
       gearMaterial: new MeshPhongMaterial({ color: BRASS.gear, shininess: 60, specular: '#fff0c0' }),
       crystal: createCrystalGeometry(),
@@ -76,8 +71,6 @@ export function Island() {
       seaMaterial: new MeshBasicMaterial({ map: sea }),
     }
   }, [])
-
-  const posts = useMemo(() => railPosts(RAIL_RADIUS), [])
 
   useLayoutEffect(() => {
     const rock = rockRef.current
@@ -124,8 +117,7 @@ export function Island() {
   return (
     <>
       <instancedMesh ref={rockRef} args={[res.rock, res.rockMaterial, ROCKS.length]} />
-      <mesh geometry={res.rail} material={res.railMaterial} castShadow={shadows} />
-      <Instanced geometry={res.post} material={res.postMaterial} items={posts} castShadow={shadows} />
+      <mesh geometry={res.railing} material={res.railingMaterial} castShadow={shadows} />
       <instancedMesh
         ref={gearRef}
         args={[res.gear, res.gearMaterial, GEAR_ITEMS.length]}

@@ -168,7 +168,13 @@ function DisplayChairs() {
       <instancedMesh ref={cushionRef} args={[res.cushion, res.cushionMaterial, n]} frustumCulled={false} />
       <instancedMesh ref={throneRef} args={[res.throne, res.material, n]} castShadow frustumCulled={false} />
       <instancedMesh ref={gemRef} args={[res.gems, res.gemMaterial, n]} frustumCulled={false} />
-      <instancedMesh ref={snowRef} args={[res.snow, res.snowMaterial, n]} frustumCulled={false} />
+      {/* Only drawn if a displayed chair is a snow chair (a draw call otherwise wasted). */}
+      <instancedMesh
+        ref={snowRef}
+        args={[res.snow, res.snowMaterial, n]}
+        frustumCulled={false}
+        visible={DISPLAYS.some((d) => d.chair.style === 'snow')}
+      />
     </>
   )
 }

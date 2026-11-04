@@ -120,6 +120,11 @@ export function Tables() {
       writeInstances(thronesRef.current, thronePlacement)
       writeInstances(gemsRef.current, gemPlacement)
       writeInstances(snowRef.current, snowPlacement)
+      // An instanced mesh of hidden instances still costs a draw call: skip it.
+      const anyThrone = thronePlacement.some((p) => p.s === ONE)
+      thronesRef.current.visible = anyThrone
+      gemsRef.current.visible = anyThrone
+      snowRef.current.visible = snowPlacement.some((p) => p.s === ONE)
     }
     paint(useGame.getState().tables)
     return useGame.subscribe((state, prev) => {

@@ -228,7 +228,9 @@ export function Player({ onAvatarReady }) {
         <PlayerAvatar onReady={onAvatarReady} targetHeight={PLAYER_HEIGHT} motionRef={motionRef} />
       </group>
       <group ref={tagRef}>
-        {selfId && <Nametag id={selfId} name={name || 'You'} streak={streak} title={title} isSelf />}
+        {selfId && (
+          <Nametag id={selfId} name={name || 'You'} streak={streak} title={title} isSelf motionRef={motionRef} />
+        )}
       </group>
     </group>
   )

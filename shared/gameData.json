@@ -1,7 +1,7 @@
 {
-  "title": "Blind Stop",
+  "title": "Blind Timer",
   "bloxity": {
-    "gameSlug": "slap-chips",
+    "gameSlug": "blind-timer",
     "roomName": "game",
     "leaderboards": [
       {
@@ -39,6 +39,10 @@
     ]
   },
   "roomSize": 20,
+  "afk": {
+    "kickSec": 90,
+    "warnSec": 20
+  },
   "timer": {
     "winsNeeded": 2,
     "maxRounds": 5,

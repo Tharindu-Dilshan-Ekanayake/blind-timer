@@ -171,7 +171,14 @@ const RemotePlayer = memo(function RemotePlayer({ meta }) {
         </group>
       </group>
       <group ref={tagRef}>
-        <Nametag id={id} name={meta.name} streak={meta.streak} title={meta.title} gate={tagGate} />
+        <Nametag
+          id={id}
+          name={meta.name}
+          streak={meta.streak}
+          title={meta.title}
+          gate={tagGate}
+          motionRef={motionRef}
+        />
       </group>
     </group>
   )

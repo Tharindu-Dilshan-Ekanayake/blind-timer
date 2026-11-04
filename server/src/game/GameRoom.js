@@ -18,9 +18,21 @@ const LEADERBOARD_PUSH_MS = 15000
 const PLAYTIME_TICK_MS = 30000
 /** Close code for a session replaced by the same account joining from elsewhere. */
 const REPLACED = 4100
+/** Close code for a player removed for being away (the client offers "Play again"). */
+const AFK_KICKED = 4101
+/** How often everyone is checked for being away. */
+const AFK_CHECK_MS = 2000
+/**
+ * Away this long and the player is removed, freeing their place for someone new;
+ * they are warned AFK_WARN_MS before. AFK_KICK_SEC overrides the time (for tests).
+ */
+const AFK_KICK_MS = (Number(process.env.AFK_KICK_SEC) || DATA.afk.kickSec) * 1000
+const AFK_WARN_MS = Math.min(DATA.afk.warnSec * 1000, AFK_KICK_MS / 2)
 
 /** profile id -> live session, across every room in this process. */
 const liveByProfile = new Map()
+/** Every room in this process, for draining on shutdown. */
+const liveRooms = new Set()
 
 /**
  * One game server: up to 20 players sharing the island and its ten tables.
@@ -34,7 +46,28 @@ class GameRoom extends Room {
   /** Clients over this are disconnected; normal play sends ~12/s. */
   maxMessagesPerSecond = 40
 
+  /**
+   * Shutdown (a deploy or a scale-down): close every room to new players and stop
+   * new duels, so the ones under way can finish. Players then move to a fresh pod.
+   */
+  static startDraining() {
+    for (const room of liveRooms) {
+      room.draining = true
+      room.lock()
+      room.broadcast('toast', { text: '🔧 Server update: finish your duel, then you’ll hop to a fresh server' })
+    }
+  }
+
+  /** Is a duel starting or under way in any room here? */
+  static duelsUnderWay() {
+    for (const room of liveRooms) if (room.tables.some((t) => t.isPlaying() || t.phase === 'countdown')) return true
+    return false
+  }
+
   onCreate() {
+    liveRooms.add(this)
+    /** Set while the pod shuts down: no new duels start (see startDraining). */
+    this.draining = false
     this.state = new GameState()
     /** session id -> Session, including players mid-reconnect. */
     this.sessions = new Map()
@@ -59,6 +92,30 @@ class GameRoom extends Room {
     this.clock.setInterval(() => this.pushLeaderboard(), LEADERBOARD_PUSH_MS)
     this.lastPlaytimeTick = Date.now()
     this.clock.setInterval(() => this.tickPlaytime(), PLAYTIME_TICK_MS)
+    this.clock.setInterval(() => this.checkAway(Date.now()), AFK_CHECK_MS)
+  }
+
+  /**
+   * Players who haven't done anything for AFK_KICK_MS are removed from the room, so
+   * their place goes to someone who wants to play. They get a warning (with an "I'm
+   * here!" button) first, and anything they do cancels it. Nobody is removed in the
+   * middle of a duel: the duel's own rules deal with a player who stops pressing,
+   * and the check catches them once it ends.
+   */
+  checkAway(now) {
+    for (const session of this.sessions.values()) {
+      // Mid-reconnect players are timed out by the reconnection window instead.
+      if (session.kicked || session.reconnection) continue
+      const idle = now - session.lastActiveAt
+      if (idle >= AFK_KICK_MS) {
+        if (session.seat?.table.isPlaying()) continue
+        session.send('afk', { kicked: true })
+        this.kick(session, AFK_KICKED)
+      } else if (idle >= AFK_KICK_MS - AFK_WARN_MS && !session.afkWarned) {
+        session.afkWarned = true
+        session.send('afk', { warn: true, inMs: AFK_KICK_MS - idle })
+      }
+    }
   }
 
   /**
@@ -125,15 +182,22 @@ class GameRoom extends Room {
     if (liveByProfile.get(session.profile.id) === session) liveByProfile.delete(session.profile.id)
   }
 
+  onDispose() {
+    liveRooms.delete(this)
+  }
+
   onUncaughtException(error, methodName) {
     console.error(`[game] room ${this.roomId} ${methodName} failed:`, error)
   }
 
-  /** Disconnects a session, including one that is mid-reconnect. */
-  kick(session) {
+  /**
+   * Disconnects a session, including one that is mid-reconnect. It gets no
+   * reconnection window: its place in the room is free at once.
+   */
+  kick(session, code = REPLACED) {
     session.kicked = true
     if (session.reconnection) session.reconnection.reject(new Error('replaced'))
-    else session.client.leave(REPLACED)
+    else session.client.leave(code)
   }
 
   sendWelcome(session, now) {

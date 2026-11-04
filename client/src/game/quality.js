@@ -6,8 +6,9 @@ import { usePlatform } from '../bloxity/platform'
  * Graphics presets. Every visual feature reads one of these values before it
  * renders anything; LOW is the floor for low-end phones.
  *
- * maxFullAvatars - remote players drawn as full skinned avatars (6+ draw calls
- *                  each); the rest become one instanced low-poly crowd.
+ * maxFullAvatars - remote players drawn as their real Bloxity avatars (the nearest;
+ *                  ~2 draw calls each with their name, measured, more with worn
+ *                  items); the rest become one instanced low-poly crowd.
  */
 export const PRESETS = {
   low: {
@@ -15,9 +16,9 @@ export const PRESETS = {
     shadows: false,
     shadowMapSize: 0,
     particles: false,
-    maxFullAvatars: 3,
+    maxFullAvatars: 10,
     /** Name tags drawn at once (nearest players), and table signs (nearest tables). */
-    maxNames: 4,
+    maxNames: 10,
     maxTableSigns: 4,
     nameDistance: 18,
     labelDistance: 22,
@@ -31,8 +32,8 @@ export const PRESETS = {
     shadows: true,
     shadowMapSize: 1024,
     particles: true,
-    maxFullAvatars: 6,
-    maxNames: 10,
+    maxFullAvatars: 14,
+    maxNames: 14,
     maxTableSigns: 6,
     nameDistance: 28,
     labelDistance: 30,
@@ -46,8 +47,8 @@ export const PRESETS = {
     shadows: true,
     shadowMapSize: 2048,
     particles: true,
-    maxFullAvatars: 10,
-    maxNames: 16,
+    maxFullAvatars: 19,
+    maxNames: 19,
     maxTableSigns: 10,
     nameDistance: 40,
     labelDistance: 38,

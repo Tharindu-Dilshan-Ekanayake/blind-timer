@@ -1,6 +1,8 @@
 import { useFrame, useThree } from '@react-three/fiber'
+import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js'
 import { useEffect, useRef } from 'react'
 import {
+  BufferAttribute,
   Color,
   CylinderGeometry,
   MeshBasicMaterial,
@@ -28,6 +30,9 @@ import { useDisposable } from './useDisposable'
  * works out what every display should read from the table state (the clock while it
  * shows, "??.???" once it goes blind, "--.---" after a stop, the revealed times) and
  * repaints a display only when that changes: no allocation, no React.
+ *
+ * Draw calls: the housings, screens and button bases are one static geometry per
+ * table (vertex-coloured), so all ten timers are 3 draw calls: body, segments, domes.
  */
 
 const TABLES = DATA.tables
@@ -158,6 +163,46 @@ function readDisplay(t, f, mine, now) {
   return won ? BUTTON.gold : BUTTON.idle
 }
 
+/** `geometry` painted one colour, as a vertex colour attribute. */
+function painted(geometry, hex) {
+  const c = new Color(hex)
+  const count = geometry.getAttribute('position').count
+  const colors = new Float32Array(count * 3)
+  for (let i = 0; i < count; i += 1) colors.set([c.r, c.g, c.b], i * 3)
+  geometry.setAttribute('color', new BufferAttribute(colors, 3))
+  return geometry
+}
+
+/**
+ * One table's timer, minus its segments and domes: the housing, a dark screen facing
+ * each seat and both button bases, in the table's frame (y from the tabletop).
+ */
+function createTimerBodyGeometry() {
+  const parts = [
+    painted(
+      mergedBoxes([
+        { size: [DEVICE.width, DEVICE.height, DEVICE.depth], at: [0, DEVICE.height / 2, 0] },
+        { size: [DEVICE.width + 0.06, 0.05, DEVICE.depth + 0.06], at: [0, DEVICE.height + 0.025, 0] },
+        { size: [DEVICE.width + 0.08, 0.04, DEVICE.depth + 0.1], at: [0, 0.02, 0] },
+        // A stubby antenna on top.
+        { size: [0.03, 0.12, 0.03], at: [DEVICE.width * 0.32, DEVICE.height + 0.11, 0] },
+      ]),
+      '#2a2d40',
+    ),
+  ]
+  for (let f = 0; f < 2; f += 1) {
+    const side = seatSide(f)
+    const screen = new PlaneGeometry(SCREEN[0], SCREEN[1])
+      .translate(0, SCREEN_Y - TABLE.height, DEVICE.depth / 2 + 0.003)
+      .rotateY(f === 0 ? 0 : Math.PI)
+    parts.push(painted(screen, '#07070b'))
+    parts.push(painted(new CylinderGeometry(0.14, 0.16, 0.06, 18).translate(0, 0.03, side * BUTTON_Z), '#1d2030'))
+  }
+  const merged = mergeGeometries(parts)
+  for (const g of parts) g.dispose()
+  return merged
+}
+
 /** Static placement of every segment, housing, screen and button. */
 function place(mesh, i, table, lx, ly, lz, yaw, sx = 1, sy = 1, sz = 1) {
   const [dx, dz] = rotateXZ(lx, lz, table.ry)
@@ -206,28 +251,16 @@ function paintDisplay(mesh, d) {
 
 export function TimerDevices() {
   const segRef = useRef(null)
-  const housingRef = useRef(null)
-  const screenRef = useRef(null)
-  const baseRef = useRef(null)
+  const bodyRef = useRef(null)
   const domeRef = useRef(null)
   const gl = useThree((s) => s.gl)
 
   const res = useDisposable(
     () => ({
-      housing: mergedBoxes([
-        { size: [DEVICE.width, DEVICE.height, DEVICE.depth], at: [0, DEVICE.height / 2, 0] },
-        { size: [DEVICE.width + 0.06, 0.05, DEVICE.depth + 0.06], at: [0, DEVICE.height + 0.025, 0] },
-        { size: [DEVICE.width + 0.08, 0.04, DEVICE.depth + 0.1], at: [0, 0.02, 0] },
-        // A stubby antenna on top.
-        { size: [0.03, 0.12, 0.03], at: [DEVICE.width * 0.32, DEVICE.height + 0.11, 0] },
-      ]),
-      housingMaterial: new MeshLambertMaterial({ color: '#2a2d40' }),
-      screen: new PlaneGeometry(SCREEN[0], SCREEN[1]),
-      screenMaterial: new MeshBasicMaterial({ color: '#07070b' }),
+      body: createTimerBodyGeometry(),
+      bodyMaterial: new MeshLambertMaterial({ vertexColors: true }),
       segment: new PlaneGeometry(1, 1),
       segmentMaterial: new MeshBasicMaterial({ color: '#ffffff', toneMapped: false }),
-      base: new CylinderGeometry(0.14, 0.16, 0.06, 18).translate(0, 0.03, 0),
-      baseMaterial: new MeshLambertMaterial({ color: '#1d2030' }),
       // A dome whose bottom sits on the base; the press squashes it down.
       dome: new SphereGeometry(0.105, 18, 8, 0, Math.PI * 2, 0, Math.PI / 2).scale(1, 0.75, 1),
       domeMaterial: new MeshPhongMaterial({ color: '#ffffff', shininess: 90, specular: '#ffffff' }),
@@ -237,16 +270,13 @@ export function TimerDevices() {
 
   useEffect(() => {
     TABLES.forEach((t, ti) => {
-      place(housingRef.current, ti, t, 0, TABLE.height, 0, 0)
+      place(bodyRef.current, ti, t, 0, TABLE.height, 0, 0)
       for (let f = 0; f < 2; f += 1) {
-        const side = seatSide(f)
-        place(screenRef.current, ti * 2 + f, t, 0, SCREEN_Y, side * (DEVICE.depth / 2 + 0.003), f === 0 ? 0 : Math.PI)
-        place(baseRef.current, ti * 2 + f, t, 0, TABLE.height, side * BUTTON_Z, 0)
-        place(domeRef.current, ti * 2 + f, t, 0, TABLE.height + 0.06, side * BUTTON_Z, 0)
+        place(domeRef.current, ti * 2 + f, t, 0, TABLE.height + 0.06, seatSide(f) * BUTTON_Z, 0)
         domeRef.current.setColorAt(ti * 2 + f, BUTTON.idle)
       }
     })
-    for (const r of [housingRef, screenRef, baseRef, domeRef]) {
+    for (const r of [bodyRef, domeRef]) {
       r.current.instanceMatrix.needsUpdate = true
       r.current.computeBoundingSphere()
     }
@@ -311,10 +341,8 @@ export function TimerDevices() {
 
   return (
     <>
-      <instancedMesh ref={housingRef} args={[res.housing, res.housingMaterial, TABLES.length]} />
-      <instancedMesh ref={screenRef} args={[res.screen, res.screenMaterial, TABLES.length * 2]} />
+      <instancedMesh ref={bodyRef} args={[res.body, res.bodyMaterial, TABLES.length]} />
       <instancedMesh ref={segRef} args={[res.segment, res.segmentMaterial, SEGS]} />
-      <instancedMesh ref={baseRef} args={[res.base, res.baseMaterial, TABLES.length * 2]} />
       <instancedMesh
         ref={domeRef}
         args={[res.dome, res.domeMaterial, TABLES.length * 2]}

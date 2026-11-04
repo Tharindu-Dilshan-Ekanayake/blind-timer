@@ -10,7 +10,10 @@ import { create } from 'zustand'
 let toastId = 0
 
 export const useGame = create((set, get) => ({
-  /** 'connecting' | 'online' | 'offline' */
+  /**
+   * 'connecting' | 'online' | 'offline' | 'failed' (gave up: Retry) | 'away' (removed
+   * for being AFK: Play again)
+   */
   status: 'connecting',
   selfId: null,
   roomId: null,
@@ -39,6 +42,10 @@ export const useGame = create((set, get) => ({
   quitAsk: false,
   /** Full-screen edge glow at your table: { kind: 'zap' | 'bullseye', at, delay, until } (ms). */
   flash: null,
+  /** "Still there?" warning from the server: { kickAt } (epoch ms), or null. */
+  afk: null,
+  /** "Play again" after an AFK removal is joining a server. */
+  awayRejoin: false,
   /** Level-up celebration: { level, reward, title, until }. */
   levelUp: null,
   emotesOpen: true,

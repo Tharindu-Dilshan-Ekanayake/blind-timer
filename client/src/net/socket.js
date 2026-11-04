@@ -54,6 +54,11 @@ const INITIAL_SYNC_MS = 1500
 const KICKED_REPLACED = 4100
 /** Consented leave (we called room.leave()). */
 const CONSENTED = 4000
+/** The server removed us for being away; we wait for "Play again" (no auto-rejoin). */
+const KICKED_AFK = 4101
+/** Input tells the server we're still here at most this often (at once while warned). */
+const ACTIVE_EVERY_MS = 10000
+const ACTIVE_WARNED_MS = 1000
 
 let room = null
 /** Matchmaker relay room the current room was reached through (hosting only). */
@@ -177,7 +182,7 @@ async function join() {
   const token = ++joinToken
   clearTimeout(retryTimer)
   firstAttemptAt ||= Date.now()
-  useGame.setState({ status: 'connecting' })
+  useGame.setState({ status: 'connecting', afk: null })
   try {
     // Every connection resolves a fresh endpoint and builds a new Client from it:
     // each endpoint is pinned to one pod.
@@ -212,7 +217,7 @@ async function join() {
     if (token !== joinToken) return
     console.warn('[net] could not join the game server:', err?.message || err)
     if (Date.now() - firstAttemptAt > GIVE_UP_MS) {
-      useGame.setState({ status: 'failed' })
+      useGame.setState({ status: 'failed', awayRejoin: false })
       return
     }
     useGame.setState({ status: 'offline' })
@@ -220,12 +225,39 @@ async function join() {
   }
 }
 
-/** After giving up: the "Retry" button. */
+/** After giving up: the "Retry" button; after an AFK removal, "Play again". */
 export function retryConnection() {
   if (!hello) return
+  if (useGame.getState().status === 'away') {
+    platform.gameplayStart()
+    useGame.setState({ awayRejoin: true })
+  }
   firstAttemptAt = 0
   retryDelay = 500
   join()
+}
+
+/* ---- Away-from-keyboard ------------------------------------------------------------ */
+
+let lastActiveSent = 0
+
+/**
+ * Tells the server the player is still here: any tap, click, key or scroll counts
+ * (camera drags and menus send nothing else). The server removes players who stay
+ * idle for DATA.afk.kickSec, warning them first; while that warning is up, the next
+ * input clears it at once.
+ */
+export function reportActivity() {
+  if (!room || useGame.getState().status !== 'online') return
+  const now = Date.now()
+  const gap = useGame.getState().afk ? ACTIVE_WARNED_MS : ACTIVE_EVERY_MS
+  if (now - lastActiveSent < gap) return
+  lastActiveSent = now
+  room.send('active', {})
+}
+
+for (const type of ['pointerdown', 'keydown', 'wheel']) {
+  window.addEventListener(type, reportActivity, { capture: true, passive: true })
 }
 
 function scheduleRejoin() {
@@ -250,7 +282,7 @@ function resetWorld() {
 function attach(r) {
   const cb = Callbacks.get(r)
   const joinedAt = Date.now()
-  useGame.setState({ selfId: r.sessionId, roomId: r.roomId })
+  useGame.setState({ selfId: r.sessionId, roomId: r.roomId, awayRejoin: false })
   // Friends can now join this room from Bloxity (invites, "Open Rooms").
   platform.updateRoom(r.roomId)
 
@@ -303,7 +335,13 @@ function attach(r) {
     clearInterval(posTimer)
     platform.updateRoom('')
     resetWorld()
-    useGame.setState({ status: 'offline' })
+    if (code === KICKED_AFK) {
+      // Our place went to someone new. Progress is saved; "Play again" matchmakes.
+      platform.gameplayEnd()
+      useGame.setState({ status: 'away', afk: null })
+      return
+    }
+    useGame.setState({ status: 'offline', afk: null })
     if (code === KICKED_REPLACED || code === CONSENTED) return
     // Closed unexpectedly (e.g. its pod is being replaced): resolve again and rejoin.
     scheduleRejoin()
@@ -347,6 +385,8 @@ onPlatformEvent('chat', (m) => {
     ? selfId
     : Object.values(players).find((p) => p.uid && p.uid === m.userId)?.id
   if (id) setBubble(id, m.text, m.seconds * 1000)
+  // Typing in Bloxity's chat is being here, even with no input on the game itself.
+  if (m.isLocalPlayer) reportActivity()
 })
 
 onPlatformEvent('breakStart', () => sfx.setMuted(true))
@@ -639,6 +679,16 @@ const handlers = {
   toast(msg) {
     useGame.getState().pushToast(msg.text)
     playToastSound(msg.text)
+  },
+
+  /** "Still there?" (`warn`, kicked in `inMs`), cleared (`warn: false`), or removed (`kicked`). */
+  afk(msg) {
+    if (msg.warn) {
+      sfx.error()
+      useGame.setState({ afk: { kickAt: Date.now() + (msg.inMs || 0) } })
+    } else if (msg.warn === false) {
+      useGame.setState({ afk: null })
+    }
   },
 
   lb(msg) {

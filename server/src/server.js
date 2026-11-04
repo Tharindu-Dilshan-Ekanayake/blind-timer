@@ -148,7 +148,26 @@ const gameServer = new Server({
 // NOTE: like /api/legion-auth above, the game trusts the Bloxity user id the client
 // sends when joining (see Session.resolveIdentity). Verify the Bloxity token there
 // before real money or leaderboards depend on it.
-gameServer.define(DATA.bloxity.roomName, GameRoom)
+// New players go to the fullest room that still has a free place, so they land with
+// other players instead of in an empty room (Colyseus creates a room only when every
+// other one is full).
+gameServer.define(DATA.bloxity.roomName, GameRoom).sortBy({ clients: -1 })
+/**
+ * Bloxity sends SIGTERM on a deploy or scale-down and waits up to 10 minutes. In
+ * production the server drains first: no new duels, and the ones under way finish.
+ * Then Colyseus disconnects everyone (close code 4001) and the clients rejoin
+ * through the matchmaker, which routes them to the fresh pod.
+ */
+const DRAIN_MAX_MS = 9 * 60 * 1000
+gameServer.onBeforeShutdown(async () => {
+  if (!PRODUCTION) return
+  GameRoom.startDraining()
+  const deadline = Date.now() + DRAIN_MAX_MS
+  console.log('[server] draining: waiting for duels to finish')
+  while (GameRoom.duelsUnderWay() && Date.now() < deadline) await new Promise((r) => setTimeout(r, 1000))
+  console.log('[server] drained')
+})
+
 // Colyseus owns SIGINT/SIGTERM: it lets every room run onLeave (which banks
 // progress) before this final save.
 gameServer.onShutdown(async () => {

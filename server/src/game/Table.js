@@ -92,7 +92,13 @@ class Table {
     return this.seats.indexOf(session)
   }
 
+  /** A duel is under way here (leaving now would be a forfeit). */
+  isPlaying() {
+    return PLAYING.has(this.phase)
+  }
+
   sit(session, now) {
+    if (this.room.draining) return 'This server is updating: you’ll move to a fresh one in a moment'
     if (this.phase !== 'waiting') return 'This table is already playing'
     const free = this.seats.indexOf(null)
     if (free < 0) return 'This table is full'
