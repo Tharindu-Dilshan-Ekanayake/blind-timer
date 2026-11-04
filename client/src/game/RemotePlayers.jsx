@@ -140,8 +140,15 @@ const RemotePlayer = memo(function RemotePlayer({ meta }) {
     if (seat) {
       group.position.set(seat.x, 0, seat.z)
       poseAtSeat(visual, tagRef.current, seat, m, delta, actionFx.get(id))
+      m.atSeat = true
     } else {
-      if (m.seated || m.danceT != null) clearSeatPose(visual, tagRef.current, m)
+      // Standing up again: back to a normal pose. Keyed on having been at a seat, not
+      // on `seated`: a loser ejected from the chair is no longer "seated" but still
+      // lying on the floor, and would stay lying there in the lobby otherwise.
+      if (m.atSeat) {
+        clearSeatPose(visual, tagRef.current, m)
+        m.atSeat = false
+      }
       r.alpha = Math.min(1, r.alpha + delta / INTERP_S)
       r.x = r.fx + (r.tx - r.fx) * r.alpha
       r.y = r.fy + (r.ty - r.fy) * r.alpha
