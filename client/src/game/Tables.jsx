@@ -2,22 +2,26 @@ import { useEffect, useLayoutEffect, useMemo, useRef } from 'react'
 import { BoxGeometry, MeshBasicMaterial, MeshLambertMaterial } from 'three'
 
 import { useGame } from '../net/gameStore'
-import Chips from './Chips'
-import TurnArrow from './TurnArrow'
 import { useCulled } from './culling'
 import { Label } from './labels'
-import { chairById, DATA, FLOOR, RARITY_AURA, RARITY_COLORS, TABLE, seatPosition } from './layout'
+import { chairById, chairYaw, DATA, FLOOR, RARITY_AURA, RARITY_COLORS, TABLE, seatPosition } from './layout'
 import { useSettings } from './quality'
 import Auras from './Aura'
 import {
+  addFinishAttribute,
   createChairCushionGeometry,
   createChairFrameGeometry,
+  createChairMaterial,
+  createSnowGeometry,
+  createSnowMaterial,
   createThroneGemGeometry,
   createThroneGeometry,
   cushionColor,
+  setFinish,
 } from './furniture'
 import Instanced from './Instanced'
 import { mergedBoxes, setInstanceColor, writeInstances } from './instancing'
+import TimerDevices from './TimerDevices'
 import { useDisposable } from './useDisposable'
 
 /** An unclaimed seat: dark wood frame, cream cushion. */
@@ -30,32 +34,34 @@ const EMPTY_CUSHION = '#e9dcc3'
  */
 function createTableBase() {
   const top = TABLE.height - 0.12
-  const x = TABLE.width / 2 - 0.18
-  const z = TABLE.depth / 2 - 0.18
+  const x = TABLE.width / 2 - 0.16
+  const z = TABLE.depth / 2 - 0.16
   return mergedBoxes([
     { size: [TABLE.width + 0.08, 0.06, TABLE.depth + 0.08], at: [0, top - 0.03, 0] },
-    { size: [TABLE.width - 0.3, 0.16, 0.06], at: [0, top - 0.14, z] },
-    { size: [TABLE.width - 0.3, 0.16, 0.06], at: [0, top - 0.14, -z] },
-    { size: [0.06, 0.16, TABLE.depth - 0.3], at: [x, top - 0.14, 0] },
-    { size: [0.06, 0.16, TABLE.depth - 0.3], at: [-x, top - 0.14, 0] },
+    { size: [TABLE.width - 0.26, 0.16, 0.06], at: [0, top - 0.14, z] },
+    { size: [TABLE.width - 0.26, 0.16, 0.06], at: [0, top - 0.14, -z] },
+    { size: [0.06, 0.16, TABLE.depth - 0.26], at: [x, top - 0.14, 0] },
+    { size: [0.06, 0.16, TABLE.depth - 0.26], at: [-x, top - 0.14, 0] },
     ...[-x, x].flatMap((lx) => [-z, z].map((lz) => ({ size: [0.13, top, 0.13], at: [lx, top / 2, lz] }))),
-    { size: [TABLE.width - 0.36, 0.06, 0.06], at: [0, 0.18, 0] },
+    { size: [0.06, 0.06, TABLE.depth - 0.32], at: [0, 0.18, 0] },
   ])
 }
 
 const ONE = [1, 1, 1]
 const ZERO = [0, 0, 0]
 
-/** Every seat of every table. Chairs are turned with their table (they face its -Z). */
+/** Every seat of every table; each chair faces across the table at the other one. */
 const SEATS = DATA.tables.flatMap((t) => [0, 1].map((i) => ({ table: t, index: i, ...seatPosition(t.id, i) })))
-/** Per-seat throne placement, rewritten when seats change (scale 0 = not a throne). */
-const thronePlacement = SEATS.map((s) => ({ p: [s.x, 0, s.z], ry: s.table.ry, s: ZERO, c: '#ffffff' }))
-const gemPlacement = SEATS.map((s) => ({ p: [s.x, 0, s.z], ry: s.table.ry, s: ZERO, c: '#ffffff' }))
+const placement = () => SEATS.map((s) => ({ p: [s.x, 0, s.z], ry: chairYaw(s), s: ZERO, c: '#ffffff' }))
+/** Per-seat placement of the optional parts, rewritten when seats change (scale 0 = hidden). */
+const thronePlacement = placement()
+const gemPlacement = placement()
+const snowPlacement = placement()
 
 /**
- * All ten tables: tops, legs and both chairs each, as a handful of instanced meshes,
- * plus the chips on them (see Chips). Each seat's chair takes the colour of the
- * chair its occupant has equipped.
+ * All ten tables: tops, legs, both chairs each and the timer between them (see
+ * TimerDevices), as a handful of instanced meshes. Each seat's chair takes the
+ * colour, finish and style of the chair its occupant has equipped.
  */
 export function Tables() {
   const { shadows, particles } = useSettings()
@@ -63,15 +69,19 @@ export function Tables() {
   const cushionsRef = useRef(null)
   const thronesRef = useRef(null)
   const gemsRef = useRef(null)
+  const snowRef = useRef(null)
 
   const res = useDisposable(
     () => ({
       top: new BoxGeometry(TABLE.width, 0.12, TABLE.depth),
       legs: createTableBase(),
-      chair: createChairFrameGeometry(),
+      chair: addFinishAttribute(createChairFrameGeometry(), SEATS.length),
       cushion: createChairCushionGeometry(),
-      throne: createThroneGeometry(),
+      throne: addFinishAttribute(createThroneGeometry(), SEATS.length),
       gems: createThroneGemGeometry(),
+      snow: createSnowGeometry(),
+      chairMaterial: createChairMaterial(),
+      snowMaterial: createSnowMaterial(),
       gemMaterial: new MeshBasicMaterial({ color: '#ffffff' }),
       wood: new MeshLambertMaterial({ color: '#d39a62' }),
       darkWood: new MeshLambertMaterial({ color: '#5a3622' }),
@@ -82,10 +92,10 @@ export function Tables() {
 
   const tops = useMemo(() => DATA.tables.map((t) => ({ p: [t.x, TABLE.height - 0.06, t.z], ry: t.ry })), [])
   const legs = useMemo(() => DATA.tables.map((t) => ({ p: [t.x, 0, t.z], ry: t.ry })), [])
-  const chairs = useMemo(() => SEATS.map((s) => ({ p: [s.x, 0, s.z], ry: s.table.ry, c: EMPTY_CHAIR })), [])
+  const chairs = useMemo(() => SEATS.map((s) => ({ p: [s.x, 0, s.z], ry: chairYaw(s), c: EMPTY_CHAIR })), [])
 
-  // Seat colours follow whoever sits there. Subscribing (rather than selecting)
-  // means table updates repaint 20 instance colours without re-rendering React.
+  // Seats follow whoever sits there. Subscribing (rather than selecting) means table
+  // updates repaint 20 instances without re-rendering React.
   useEffect(() => {
     const paint = (tables) => {
       const frames = chairsRef.current
@@ -97,21 +107,30 @@ export function Tables() {
         const color = chair ? chair.color : EMPTY_CHAIR
         setInstanceColor(frames, i, color)
         setInstanceColor(cushions, i, chair ? `#${cushionColor(color)}` : EMPTY_CUSHION)
-        // Thrones get their crest, armrests and jewels; other seats hide them.
+        setFinish([res.chair, res.throne], i, chair ?? DATA.chairs[0])
+        // Thrones get their crest, armrests and jewels, snow chairs their snow; other
+        // seats hide them.
         const throne = chair?.style === 'throne'
         thronePlacement[i].s = throne ? ONE : ZERO
         thronePlacement[i].c = color
         gemPlacement[i].s = throne ? ONE : ZERO
         gemPlacement[i].c = RARITY_COLORS[chair?.rarity] ?? '#ffffff'
+        snowPlacement[i].s = chair?.style === 'snow' ? ONE : ZERO
       })
       writeInstances(thronesRef.current, thronePlacement)
       writeInstances(gemsRef.current, gemPlacement)
+      writeInstances(snowRef.current, snowPlacement)
+      // An instanced mesh of hidden instances still costs a draw call: skip it.
+      const anyThrone = thronePlacement.some((p) => p.s === ONE)
+      thronesRef.current.visible = anyThrone
+      gemsRef.current.visible = anyThrone
+      snowRef.current.visible = snowPlacement.some((p) => p.s === ONE)
     }
     paint(useGame.getState().tables)
     return useGame.subscribe((state, prev) => {
       if (state.tables !== prev.tables) paint(state.tables)
     })
-  }, [])
+  }, [res])
 
   useLayoutEffect(() => {
     writeInstances(chairsRef.current, chairs)
@@ -124,15 +143,15 @@ export function Tables() {
       <Instanced geometry={res.legs} material={res.darkWood} items={legs} castShadow={shadows} />
       <instancedMesh
         ref={chairsRef}
-        args={[res.chair, res.tinted, chairs.length]}
+        args={[res.chair, res.chairMaterial, chairs.length]}
         castShadow={shadows}
         receiveShadow
       />
       <instancedMesh ref={cushionsRef} args={[res.cushion, res.tinted, chairs.length]} receiveShadow />
-      <instancedMesh ref={thronesRef} args={[res.throne, res.tinted, chairs.length]} castShadow={shadows} />
+      <instancedMesh ref={thronesRef} args={[res.throne, res.chairMaterial, chairs.length]} castShadow={shadows} />
       <instancedMesh ref={gemsRef} args={[res.gems, res.gemMaterial, chairs.length]} />
-      <Chips />
-      <TurnArrow />
+      <instancedMesh ref={snowRef} args={[res.snow, res.snowMaterial, chairs.length]} />
+      <TimerDevices />
       {DATA.tables.map((t) => (
         <TableLabel key={t.id} table={t} />
       ))}
@@ -177,8 +196,6 @@ function SeatAuras() {
   return <Auras items={items} />
 }
 
-const heartsText = (n) => '❤️'.repeat(Math.max(0, n)) || '💔'
-
 function tableLines(table, weekend, now) {
   const reward = DATA.winReward * (weekend ? 2 : 1)
   const prize = weekend
@@ -191,19 +208,18 @@ function tableLines(table, weekend, now) {
   if (table.phase === 'countdown') {
     return [{ text: `Starting in ${Math.max(1, Math.ceil((table.endsAt - now) / 1000))}`, size: 40 }]
   }
-  if (table.phase === 'hiding') return [{ text: 'Hiding slaps… 🤫', size: 34 }]
-  if (table.phase === 'eating') {
-    // Spectators get the score: each side's hearts, left to right as seen from the
-    // plaza (behind the players, where seat 0 is on the left).
-    return [{ text: `${heartsText(table.hearts[0])}  vs  ${heartsText(table.hearts[1])}`, size: 34 }]
-  }
-  return []
+  if (table.phase === 'ended') return []
+  // Spectators get the round and the score.
+  return [
+    { text: `⏱️ Round ${table.round}`, size: 30, color: '#ffcf4a' },
+    { text: `${table.scores[0]}  -  ${table.scores[1]}`, size: 38 },
+  ]
 }
 
 /**
- * "0/2 Players / Win $200" above a table, or the duel's hearts while it plays.
- * Polled, since the countdown ticks. Hidden at the player's own table, where the
- * HUD shows the same thing.
+ * "0/2 Players / Win $200" above a table, or the duel's round and score while it
+ * plays. Polled, since the countdown ticks. Hidden at the player's own table, where
+ * the HUD shows the same thing.
  */
 function TableLabel({ table }) {
   const label = useDisposable(() => new Label({ height: 0.42 }), [])

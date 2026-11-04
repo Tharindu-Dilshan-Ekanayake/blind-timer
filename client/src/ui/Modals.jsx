@@ -1,12 +1,13 @@
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 
 import { sfx } from '../audio/sfx'
-import { DATA, RARITY_COLORS } from '../game/layout'
+import { DATA, finishOf, RARITY_COLORS } from '../game/layout'
 import { usePlatform } from '../bloxity/platform'
 import { useQuality } from '../game/quality'
 import { GRAPHICS, setCameraSpeed, setGraphics, setMusicVolume, setShowFps, setVolume } from '../game/userSettings'
 import { useGame } from '../net/gameStore'
 import { send } from '../net/api'
+import ChairIcon from './ChairIcon'
 import { clock, money, useNow } from './format'
 
 /** The chunky teal-framed window used by every menu, with the red X. */
@@ -72,9 +73,11 @@ function Row({ title, titleClass = 'text-white', sub, icon, action, rarity }) {
   )
 }
 
-function ActionButton({ label, onClick, variant = 'buy', disabled = false }) {
+function ActionButton({ label, onClick, variant = 'buy', disabled = false, wide = false }) {
   const styles = {
     buy: 'bg-[#22d43a] text-white',
+    // Not enough cash yet: still tappable (the server says how much is missing).
+    locked: 'bg-[#5b6270] text-white',
     owned: 'bg-[#3b3e45] text-white',
     equip: 'bg-[#2a8bff] text-white',
   }
@@ -83,7 +86,7 @@ function ActionButton({ label, onClick, variant = 'buy', disabled = false }) {
       type="button"
       disabled={disabled}
       onClick={onClick}
-      className={`press btn-3d min-w-[6.5rem] px-3 py-1.5 text-lg font-bold ${styles[variant]}`}
+      className={`press btn-3d px-3 py-1.5 font-bold ${wide ? 'w-full text-base' : 'min-w-[6.5rem] text-lg'} ${styles[variant]}`}
     >
       <span className="stroke-text">{label}</span>
     </button>
@@ -100,43 +103,110 @@ const equip = (id) => {
   send({ t: 'equip', id })
 }
 
-function ChairSwatch({ chair }) {
+const CHAIR_FILTERS = [
+  ['all', 'All'],
+  ['showroom', '📍 Showroom'],
+  ['store', '🛒 Store only'],
+  ['owned', '🎒 Owned'],
+]
+
+/** Cheapest first; the free starter chair leads. */
+const CHAIRS_BY_PRICE = [...DATA.chairs].sort((a, b) => a.price - b.price)
+
+/** One chair for sale: its picture, name, rarity and finish, and buy / equip. */
+function ChairCard({ chair, profile }) {
+  const owned = profile.ownedChairs.includes(chair.id)
+  const equipped = profile.equippedChair === chair.id
+  const color = RARITY_COLORS[chair.rarity]
+  const tags = [finishOf(chair).label]
+  if (chair.style === 'throne') tags.push('Throne')
+  if (chair.style === 'snow') tags.push('Snowy')
   return (
-    <span
-      className="flex size-12 shrink-0 items-center justify-center rounded-lg border-[3px] border-black text-[1.7rem]"
-      style={{ background: chair.color }}
+    <div
+      className="relative flex flex-col items-center gap-1 overflow-hidden rounded-xl border-[3px] p-2 pt-1.5"
+      style={{
+        borderColor: color,
+        background: `radial-gradient(circle at 50% 32%, ${color}55, #123540 70%)`,
+      }}
     >
-      {chair.style === 'throne' ? '👑' : '🪑'}
-    </span>
+      {chair.lobby && (
+        <span className="absolute left-1 top-1 rounded bg-black/45 px-1 text-[0.6rem] font-bold text-white" title="Also on show in the lobby">
+          📍
+        </span>
+      )}
+      <span
+        className="stroke-thin absolute right-1 top-1 rounded px-1 py-0.5 text-[0.55rem] font-bold uppercase text-white"
+        style={{ background: color }}
+      >
+        {chair.rarity}
+      </span>
+      <ChairIcon chair={chair} className="mt-2 size-[4.6rem]" />
+      <div className="stroke-text w-full truncate text-center text-base font-bold leading-tight text-white">{chair.name}</div>
+      <div className="w-full truncate text-center text-[0.7rem] font-bold text-white/75">{tags.join(' · ')}</div>
+      <div className="mt-auto w-full">
+        {equipped ? (
+          <ActionButton label="EQUIPPED" variant="owned" disabled wide />
+        ) : owned ? (
+          <ActionButton label="EQUIP" variant="equip" onClick={() => equip(chair.id)} wide />
+        ) : (
+          <ActionButton
+            label={money(chair.price)}
+            variant={profile.cash >= chair.price ? 'buy' : 'locked'}
+            onClick={() => buy('chair', chair.id)}
+            wide
+          />
+        )}
+      </div>
+    </div>
   )
 }
 
-function ChairRows({ profile, ownedOnly = false }) {
-  return DATA.chairs
-    .filter((c) => !ownedOnly || profile.ownedChairs.includes(c.id))
-    .map((c) => {
-      const owned = profile.ownedChairs.includes(c.id)
-      const equipped = profile.equippedChair === c.id
-      return (
-        <Row
-          key={c.id}
-          icon={<ChairSwatch chair={c} />}
-          title={c.name}
-          rarity={c.rarity}
-          sub={c.style === 'throne' ? 'Throne' : null}
-          titleClass="text-white"
-          action={
-            equipped ? (
-              <ActionButton label="EQUIPPED" variant="owned" disabled />
-            ) : owned ? (
-              <ActionButton label="EQUIP" variant="equip" onClick={() => equip(c.id)} />
-            ) : (
-              <ActionButton label={money(c.price)} onClick={() => buy('chair', c.id)} />
-            )
-          }
-        />
-      )
-    })
+/**
+ * Every chair as a grid of cards, with filters: the ones on show in the lobby's
+ * showroom, the ones sold only here in the Store, and the ones you own.
+ */
+function ChairGrid({ profile, ownedOnly = false }) {
+  const [filter, setFilter] = useState('all')
+  const shown = CHAIRS_BY_PRICE.filter((c) => {
+    if (ownedOnly || filter === 'owned') return profile.ownedChairs.includes(c.id)
+    if (filter === 'showroom') return c.lobby
+    // The free starter chair isn't for sale anywhere.
+    if (filter === 'store') return !c.lobby && c.price > 0
+    return true
+  })
+  return (
+    <>
+      {!ownedOnly && (
+        <div className="flex shrink-0 flex-col gap-1.5">
+          <div className="stroke-thin text-center text-sm font-bold text-white/90">
+            🪑 {profile.ownedChairs.length}/{DATA.chairs.length} chairs owned · 📍 = also in the lobby showroom
+          </div>
+          <div className="grid grid-cols-4 gap-1.5">
+            {CHAIR_FILTERS.map(([id, label]) => (
+              <button
+                key={id}
+                type="button"
+                onClick={() => {
+                  sfx.click()
+                  setFilter(id)
+                }}
+                className={`press rounded-lg border-2 border-black/60 px-1 py-1 text-[0.7rem] font-bold text-white ${
+                  filter === id ? 'bg-[#ffcf4a] text-black' : 'bg-black/30'
+                }`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+      <div className="grid shrink-0 grid-cols-2 gap-2 sm:grid-cols-3">
+        {shown.map((c) => (
+          <ChairCard key={c.id} chair={c} profile={profile} />
+        ))}
+      </div>
+    </>
+  )
 }
 
 function EmoteRows({ profile, ownedOnly = false }) {
@@ -311,8 +381,8 @@ function ShopModal({ profile }) {
     </div>
   )
   return (
-    <Frame title={tab === 'emotes' ? 'Emote Shop 😡🥳' : 'Shop 🧺'} tabs={tabs}>
-      {tab === 'chairs' && <ChairRows profile={profile} />}
+    <Frame title="Store 🛒" tabs={tabs}>
+      {tab === 'chairs' && <ChairGrid profile={profile} />}
       {tab === 'auras' && <HaloRows profile={profile} />}
       {tab === 'titles' && <TitleRows profile={profile} />}
       {tab === 'emotes' && <EmoteRows profile={profile} />}
@@ -325,7 +395,7 @@ function ItemsModal({ profile }) {
   return (
     <Frame title="Items 🎒">
       <h3 className="stroke-text text-xl font-bold text-white">Chairs</h3>
-      <ChairRows profile={profile} ownedOnly />
+      <ChairGrid profile={profile} ownedOnly />
       {(profile.ownedHalos || []).length > 0 && (
         <>
           <h3 className="stroke-text mt-2 text-xl font-bold text-white">Auras</h3>
@@ -545,22 +615,24 @@ function QuestsModal({ profile }) {
 }
 
 const HELP_STEPS = [
-  ['🚶', 'Walk to a table', 'Use WASD (or the joystick on phones). Walk up to a table and press E (or tap "Play").'],
-  ['🤫', 'Hide your slaps', `When a second player sits down, you each hide ${DATA.chips.slaps} slaps in the chips on your own plate. Keep them secret!`],
-  ['😋', 'Take turns eating', "On your turn, pick a chip from your opponent's plate and eat it. A safe chip goes CRUNCH."],
-  ['🖐️', "Don't get slapped", `Bite into a hidden slap and your opponent slaps you: you lose a heart. Bite all ${DATA.chips.slaps} of their slaps and you're OUT!`],
-  ['🏆', 'Win the duel', `The first player to bite all ${DATA.chips.slaps} slaps loses. The other wins $${DATA.winReward}. Even if you lose, you get $${DATA.lossReward} and XP for playing.`],
-  ['🏃', 'No quitting!', `Quit a duel and you lose $${DATA.forfeit.penalty} to your opponent, and they slap you ${DATA.forfeit.slaps} times before you go.`],
-  ['✨', 'Golden chip', `One safe chip on every plate is secretly golden: eat it for a $${DATA.chips.goldenCash} bonus.`],  ['⭐', 'Level up', 'Every duel gives XP. Each new level pays cash, and some unlock cool titles for your name.'],
+  ['🚶', 'Walk to a table', 'Use WASD (or the joystick on phones). Walk up to a table and press E (or tap "Play"). When someone sits across from you, the duel starts.'],
+  ['🎯', 'Read the target', 'Every round shows a TARGET time in seconds and milliseconds, like 07.384. Your job: stop your clock as close to it as you can.'],
+  ['👀', 'Then it goes blind', 'The clock starts at 00.000 and you can watch it for a few seconds (less every round). Then it hides and shows ??.??? — count in your head!'],
+  ['✋', 'Hit STOP', 'Press the big STOP button, SPACE, or tap your button on the table when you think the clock has reached the target.'],
+  ['🏆', 'Closest wins', `Whoever stops closer to the target wins the round. First to ${DATA.timer.winsNeeded} rounds wins the duel and $${DATA.winReward}; even if you lose, you get $${DATA.lossReward} and XP for playing.`],
+  ['🚀', 'Losers get ejected!', 'Lose the duel and your chair launches you out of your seat, while the winner dances on the table.'],
+  ['🎯', 'Bullseye bonus', `Stop within ±${(DATA.timer.bullseyeMs / 1000).toFixed(2)}s of the target for a $${DATA.timer.bullseyeCash} bonus.`],
+  ['🏃', 'No quitting!', `Quit a duel and it counts as a loss: you pay $${DATA.forfeit.penalty} to your opponent.`],
+  ['🪑', 'Collect chairs', 'Walk up to the chairs in the showroom to buy them, or open the 🛒 STORE for many more: Wood, Silver, Gold, Platinum, Snow, Gems, Neon and royal Thrones!'],
+  ['⭐', 'Level up', 'Every duel gives XP. Each new level pays cash, and some unlock cool titles for your name.'],
   ['📜', 'Quests & gifts', 'Finish 3 daily quests, open a free gift every 10 minutes, and claim your daily reward.'],
-  ['🛍️', 'Spend your cash', 'Buy chairs and thrones, glowing auras, titles and emotes in the Shop. Show them off!'],
   ['🔥', 'Win streaks', 'Win in a row for bonus cash at 3, 5 and 10 wins. Get on the leaderboards!'],
 ]
 
 /** "How to play" in plain English. Opens by itself on a player's first visit. */
 function HelpModal() {
   return (
-    <Frame title="How to Play 🖐️">
+    <Frame title="How to Play ⏱️">
       {HELP_STEPS.map(([icon, title, text], i) => (
         <div key={title} className="flex items-start gap-3 rounded-xl border-[3px] border-black/50 bg-[#123540] px-3 py-2">
           <span className="flex size-11 shrink-0 items-center justify-center rounded-lg bg-white/10 text-[1.8rem]">{icon}</span>

@@ -6,8 +6,8 @@ import { effectQueue } from '../net/liveState'
 import { useDisposable } from './useDisposable'
 
 /**
- * Pooled particle effects: confetti over a duel's winner, and little stars where a
- * slap lands (or a golden chip is found). Fixed-size pools, preallocated typed
+ * Pooled particle effects: confetti over a duel's winner, and little sparks when a
+ * button zaps its player (or someone hits a bullseye). Fixed-size pools, preallocated typed
  * arrays, one instanced draw call per effect; nothing is allocated per frame or per
  * spawn.
  *
@@ -15,7 +15,7 @@ import { useDisposable } from './useDisposable'
  */
 
 const CONFETTI = 160
-/** Impact stars from a slap (and a golden chip's glitter). */
+/** Sparks from a zap (and a bullseye's glitter). */
 const SPARKS = 48
 const GRAVITY = 9
 

@@ -1,47 +1,53 @@
 const DATA = require('./data')
 
-const C = DATA.chips
-const CELLS = C.cols * C.rows
 const T = DATA.timing
-/** After a quitter's last slap: time to fly out of the chair and lie there, in seconds. */
-const PUNISH_TAIL_S = 3
+const TM = DATA.timer
+/** Synced `time0`/`time1` values before a round is revealed, and for a player who never pressed. */
+const HIDDEN = -1
+const NO_PRESS = -2
+/** After the result: when the loser's chair launches them out, in seconds. */
+const EJECT_AT_S = 0.9
+/** Phases in which a duel is under way (leaving one is a forfeit). */
+const PLAYING = new Set(['target', 'running', 'reveal'])
 
-/** Chip states, one character per chip in the synced plate strings. */
-const FULL = '0'
-const EATEN = '1'
-const SLAPPED = '2'
-const GOLDEN = '3'
+const randomInt = (n) => Math.floor(Math.random() * n)
+const clamp = (n, lo, hi) => Math.min(hi, Math.max(lo, n))
 
-const randomItem = (list) => list[Math.floor(Math.random() * list.length)]
-const isCell = (n) => Number.isInteger(n) && n >= 0 && n < CELLS
+/** Settings for round `n` (1-based); rounds past the list reuse its last entry. */
+const roundConfig = (n) => TM.rounds[Math.min(n, TM.rounds.length) - 1]
 
-/** `count` different random cells. */
-function randomCells(count) {
-  const pool = Array.from({ length: CELLS }, (_, i) => i)
-  const out = []
-  while (out.length < count) out.push(pool.splice(Math.floor(Math.random() * pool.length), 1)[0])
-  return out.sort((a, b) => a - b)
+/**
+ * A random target for round `n`, to the millisecond (e.g. 7.384 s): never a round
+ * number to aim for. A whole or half second is rerolled.
+ */
+function pickTarget(n) {
+  const r = roundConfig(n)
+  let ms
+  do ms = Math.round((r.min + Math.random() * (r.max - r.min)) * 1000)
+  while (ms % 500 === 0)
+  return ms
 }
 
 /**
  * One two-seat table and the duel played at it.
  *
- * Each player has a plate of chips in front of them. They secretly hide slaps in
- * their own chips, then take turns biting a chip from the OTHER plate. A safe chip
- * is a crunch; a hidden slap means the plate's owner slaps you and you lose a heart.
- * There is one heart per slap, so you are out only once you have bitten every slap
- * hidden on their plate. One safe chip per plate is secretly golden and pays a
- * little bonus cash.
+ * Every round has a target time. A clock starts from zero in front of both players;
+ * it shows for the first second or few (less each round), then goes blind. Each
+ * player stops their own clock when they think it has reached the target. The
+ * closer stop wins the round; the first to DATA.timer.winsNeeded rounds wins.
  *
  * Phases:
  *   waiting   - zero or one player seated
  *   countdown - both seats filled, "Starting in 3..."
- *   hiding    - both players hide their slaps at the same time
- *   eating    - turns: pick a chip, a short drumroll, then crunch or SLAP
+ *   target    - the round's target is announced; the clock starts as it ends
+ *   running   - the clock runs (visible, then blind) until both have pressed or
+ *               DATA.timer.overSec after the target
+ *   reveal    - both stopped times and the round's winner on screen
  *   ended     - result on screen; both players are stood up when it runs out
  *
- * The server holds the slap positions. A client learns only where it hid its own,
- * the chips already eaten (public) and, once the duel is over, everything.
+ * The server keeps the time: a press counts from the round's start on the server
+ * clock, so the client's reading is only trusted within DATA.timer.lagMs of it
+ * (its network delay). Nobody learns the other's time until the reveal.
  */
 class Table {
   /**
@@ -64,21 +70,20 @@ class Table {
   reset() {
     this.phase = 'waiting'
     this.endsAt = 0
-    /** slaps[i] = the cells of seat i's own plate where seat i hid a slap (null until hidden). */
-    this.slaps = [null, null]
-    /** golden[i] = the golden chip on seat i's plate (picked once both have hidden). */
-    this.golden = [-1, -1]
-    /** plates[i] = seat i's plate (the one seat 1-i eats from). */
-    this.plates = [Array(CELLS).fill(FULL), Array(CELLS).fill(FULL)]
-    this.hearts = [C.hearts, C.hearts]
-    /** Slaps bitten, for the "flawless" quest. */
-    this.hits = [0, 0]
-    this.turn = 0
+    this.startAt = 0
+    this.round = 0
+    this.target = 0
+    this.showMs = 0
+    this.score = [0, 0]
+    /** What each seat's clock read when they stopped it this round, in ms (null = not yet). */
+    this.pressed = [null, null]
+    /** Total distance from the targets over every round: the tie-break after the last one. */
+    this.errors = [0, 0]
+    /** Rounds in a row each seat let pass without pressing. */
+    this.misses = [0, 0]
+    this.roundWinner = -1
     /** Seat index of the winner once the duel has ended, else -1. */
     this.winner = -1
-    this.timeouts = [0, 0]
-    /** True between a bite and its outcome, so a second bite can't sneak in. */
-    this.pending = false
     // Invalidates any setTimeout scheduled for the previous match.
     this.token += 1
   }
@@ -87,7 +92,13 @@ class Table {
     return this.seats.indexOf(session)
   }
 
+  /** A duel is under way here (leaving now would be a forfeit). */
+  isPlaying() {
+    return PLAYING.has(this.phase)
+  }
+
   sit(session, now) {
+    if (this.room.draining) return 'This server is updating: you’ll move to a fresh one in a moment'
     if (this.phase !== 'waiting') return 'This table is already playing'
     const free = this.seats.indexOf(null)
     if (free < 0) return 'This table is full'
@@ -105,21 +116,17 @@ class Table {
 
   /**
    * A seated player stands up (`gone` false: they pressed Quit / Leave) or
-   * disconnected (`gone` true).
+   * disconnected (`gone` true). Leaving a duel under way is a forfeit.
    */
   leave(session, now, { gone = false } = {}) {
     const i = this.seatOf(session)
     if (i < 0) return
     const other = this.seats[1 - i]
 
-    if (this.phase === 'eating') {
-      // Quitting mid-duel is a loss that costs money. Someone who quits (rather than
-      // drops) stays in their chair to be slapped first; finish() sends them back
-      // to the lobby afterwards.
-      const punish = !gone && Boolean(other)
-      this.finish(1 - i, i, 'forfeit', now, { punish })
-      if (punish) return
-    } else if (this.phase === 'countdown' || this.phase === 'hiding') {
+    if (PLAYING.has(this.phase) && other) {
+      this.finish(1 - i, i, 'forfeit', now)
+      if (!gone) this.room.bubble(session, 'I give up! 🏳️')
+    } else if (this.phase === 'countdown') {
       other?.toast('Your opponent left the table')
     }
 
@@ -140,225 +147,181 @@ class Table {
     session.send('match', { match: null })
   }
 
-  /** A player hides their slaps in their own plate: `cells` must be DATA.chips.slaps different chips. */
-  hide(session, cells, now) {
-    const i = this.seatOf(session)
-    if (i < 0 || this.phase !== 'hiding' || this.slaps[i] !== null) return
-    if (!Array.isArray(cells) || cells.length !== C.slaps || !cells.every(isCell)) return
-    if (new Set(cells).size !== cells.length) return
-
-    this.slaps[i] = [...cells].sort((a, b) => a - b)
-    this.room.bubble(session, 'Ready ✅')
-    if (this.slaps[1 - i] !== null) this.startEating(now)
-    else this.sync(now)
-  }
-
-  /** The player whose turn it is bites a chip from the other plate. */
-  eat(session, cell, now) {
-    const i = this.seatOf(session)
-    if (i < 0 || this.phase !== 'eating' || this.turn !== i || this.pending) return
-    if (!isCell(cell) || this.plates[1 - i][cell] !== FULL) return
-    this.timeouts[i] = 0
-    this.bite(i, cell, now)
-  }
-
-  bite(i, cell, now) {
-    this.pending = true
-    const eater = this.seats[i]
-    this.room.bubble(eater, 'Nom… 😬')
-    // Both players get the drumroll; everyone in the room sees the avatar take a bite.
-    this.tell({ t: 'bite', by: i, cell })
-    if (eater) this.room.broadcast('fx', { kind: 'eat', id: eater.id })
+  /** Announces the next round's target; its clock starts when this phase ends. */
+  startRound(now) {
+    this.round += 1
+    this.target = pickTarget(this.round)
+    this.showMs = Math.round(roundConfig(this.round).show * 1000)
+    this.pressed = [null, null]
+    this.roundWinner = -1
+    this.phase = 'target'
+    this.endsAt = now + T.target * 1000
+    this.startAt = this.endsAt
     this.sync(now)
-
-    const token = this.token
-    // Room clock: cleared automatically if the room is disposed meanwhile.
-    this.room.clock.setTimeout(() => {
-      if (this.token !== token || this.phase !== 'eating') return
-      this.resolveBite(i, cell, Date.now())
-    }, T.bite * 1000)
   }
 
-  resolveBite(i, cell, now) {
-    const o = 1 - i
-    const plate = this.plates[o]
-    const eater = this.seats[i]
-    const owner = this.seats[o]
-    let kind
-
-    if (this.slaps[o].includes(cell)) {
-      plate[cell] = SLAPPED
-      this.hearts[i] -= 1
-      this.hits[i] += 1
-      kind = 'slap'
-      this.room.bubble(eater, this.hearts[i] > 0 ? 'OUCH! 😵' : 'KNOCKED OUT 💫')
-      this.room.bubble(owner, 'SLAP! 🖐️')
-    } else if (cell === this.golden[o]) {
-      plate[cell] = GOLDEN
-      kind = 'golden'
-      if (eater) this.room.bonusCash(eater, C.goldenCash, now)
-      this.room.bubble(eater, 'Golden chip! ✨')
-    } else {
-      plate[cell] = EATEN
-      kind = 'safe'
-      this.room.bubble(eater, 'Crunch! 😋')
-    }
-
-    if (eater && (kind === 'safe' || kind === 'golden')) {
-      this.room.questEvent(eater, 'crunch', now)
-      if (kind === 'golden') this.room.questEvent(eater, 'golden', now)
-    }
-    this.tell({ t: 'outcome', by: i, cell, kind, hearts: this.hearts[i] })
-    // Everyone in the room sees it: the owner slaps the eater with their own hand
-    // (and the last slap knocks them clean out of their chair).
-    if (eater) {
-      this.room.broadcast('fx', {
-        kind: kind === 'safe' ? 'crunch' : kind,
-        id: eater.id,
-        by: owner?.id ?? '',
-        final: kind === 'slap' && this.hearts[i] <= 0,
-      })
-    }
-
-    // Out only on the last slap hidden on their plate (one heart per slap).
-    if (this.hearts[i] <= 0) {
-      this.finish(o, i, 'slapped', now)
-      return
-    }
-    this.turn = o
-    this.beginTurn(now)
+  startRunning(now) {
+    this.phase = 'running'
+    this.endsAt = this.startAt + this.target + TM.overSec * 1000
+    this.sync(now)
   }
 
   /**
-   * A duel event for both seated players, from each one's point of view: `mine`
-   * is true for the player who took the bite.
+   * A player stops their clock. `ms` is what their own clock read (the client's
+   * view of the time since the start); it only counts within DATA.timer.lagMs
+   * before the server received the press, never later.
    */
-  tell({ t, by, ...rest }) {
-    this.seats.forEach((s, i) => s?.send('duel', { t, mine: i === by, ...rest }))
+  press(session, ms, now) {
+    const i = this.seatOf(session)
+    if (i < 0) return
+    // The tick that starts the clock may not have run yet.
+    if (this.phase === 'target' && now >= this.startAt) this.startRunning(now)
+    if (this.phase !== 'running' || this.pressed[i] !== null) return
+
+    const elapsed = now - this.startAt
+    const claimed = Number.isFinite(ms) ? ms : elapsed
+    this.pressed[i] = Math.round(clamp(claimed, Math.max(0, elapsed - TM.lagMs), elapsed))
+    this.room.bubble(session, 'STOP! ✋')
+    this.room.broadcast('fx', { kind: 'press', id: session.id })
+
+    if (this.pressed[1 - i] !== null) this.resolveRound(now)
+    else this.sync(now)
   }
 
-  startHiding(now) {
-    this.phase = 'hiding'
-    this.endsAt = now + T.hide * 1000
-    for (const s of this.seats) this.room.bubble(s, 'Hiding slaps 🤫')
-    this.sync(now)
-  }
+  /** Both have pressed (or time ran out): who was closer? */
+  resolveRound(now) {
+    const err = this.pressed.map((p) => (p === null ? Infinity : Math.abs(p - this.target)))
+    let w = -1
+    if (err[0] < err[1]) w = 0
+    else if (err[1] < err[0]) w = 1
+    this.roundWinner = w
+    if (w >= 0) this.score[w] += 1
 
-  startEating(now) {
-    this.phase = 'eating'
-    // One safe chip on each plate is secretly golden.
-    this.golden = this.slaps.map((slaps) => {
-      const safe = Array.from({ length: CELLS }, (_, c) => c).filter((c) => !slaps.includes(c))
-      return randomItem(safe)
+    err.forEach((e, i) => {
+      this.errors[i] += Math.min(e, TM.overSec * 1000)
+      this.misses[i] = this.pressed[i] === null ? this.misses[i] + 1 : 0
+      const s = this.seats[i]
+      if (!s) return
+      if (i === w) this.room.bubble(s, e <= TM.closeMs ? 'Nailed it! 😎' : 'Closer! 😏')
+      else if (e === Infinity) this.room.bubble(s, 'Too late! 🐢')
+      else if (w >= 0) this.room.bubble(s, 'So close! 😬')
+      else this.room.bubble(s, 'A tie?! 🤝')
+      if (e <= TM.closeMs) this.room.questEvent(s, 'close', now)
+      if (e <= TM.bullseyeMs) {
+        this.room.bonusCash(s, TM.bullseyeCash, now)
+        this.room.questEvent(s, 'bullseye', now)
+        this.room.bubble(s, 'BULLSEYE! 🎯')
+        this.room.broadcast('fx', { kind: 'bullseye', id: s.id })
+      }
     })
-    this.turn = Math.random() < 0.5 ? 0 : 1
-    this.beginTurn(now)
+    // Everyone in the room sees the round's loser get a little zap from their button.
+    const loser = w >= 0 ? this.seats[1 - w] : null
+    if (loser) this.room.broadcast('fx', { kind: 'zap', id: loser.id })
+
+    this.phase = 'reveal'
+    this.endsAt = now + T.reveal * 1000
+    this.sync(now)
   }
 
-  beginTurn(now) {
-    this.pending = false
-    this.endsAt = now + T.turn * 1000
-    this.sync(now)
+  /** After a reveal: the duel is decided, or on to the next round. */
+  afterReveal(now) {
+    const decided = this.score.findIndex((s) => s >= TM.winsNeeded)
+    if (decided >= 0) {
+      this.finish(decided, 1 - decided, 'timer', now)
+      return
+    }
+    // Nobody is pressing any more: call the duel off rather than run it forever.
+    if (this.misses[0] >= 2 && this.misses[1] >= 2) {
+      for (const s of this.seats) s?.toast('Nobody stopped the clock: duel cancelled')
+      this.unseat(0)
+      this.unseat(1)
+      this.reset()
+      this.sync(now)
+      return
+    }
+    const asleep = this.misses.findIndex((m) => m >= 2)
+    if (asleep >= 0) {
+      this.finish(1 - asleep, asleep, 'afk', now)
+      return
+    }
+    if (this.round >= TM.maxRounds) {
+      // Out of rounds: the higher score, then the smaller total error, wins.
+      const [a, b] = this.score
+      const [ea, eb] = this.errors
+      let w
+      if (a !== b) w = a > b ? 0 : 1
+      else if (ea !== eb) w = ea < eb ? 0 : 1
+      else w = randomInt(2)
+      this.finish(w, 1 - w, 'timer', now)
+      return
+    }
+    this.startRound(now)
   }
 
   /**
    * Ends the duel. A quitter (`reason` 'forfeit') pays DATA.forfeit.penalty, which
-   * goes to the winner on top of the prize; with `punish` they stay in their chair
-   * while the winner slaps them DATA.forfeit.slaps times, the last one knocking them
-   * out of it.
+   * goes to the winner on top of the prize. A loser still in their seat is launched
+   * out of it by their chair, then respawns in the lobby while the winner dances.
    */
-  finish(w, l, reason, now, { punish = false } = {}) {
-    const F = DATA.forfeit
-    // The slaps for quitting, at these times (seconds after now).
-    const slapAt = punish ? Array.from({ length: F.slaps }, (_, k) => F.slapFirst + k * F.slapGap) : []
-    const punishEnd = slapAt.length ? slapAt[slapAt.length - 1] : 0
-
+  finish(w, l, reason, now) {
     this.phase = 'ended'
-    this.endsAt = now + Math.max(T.results, punishEnd + PUNISH_TAIL_S + 1) * 1000
-    this.pending = false
+    this.endsAt = now + T.results * 1000
     this.winner = w
 
     const winner = this.seats[w]
     const loser = this.seats[l]
     let reward = 0
 
-    const played = reason === 'slapped'
-    const penalty = reason === 'forfeit' && loser ? this.room.takeCash(loser, F.penalty, now) : 0
+    const played = reason === 'timer'
+    const penalty = reason === 'forfeit' && loser ? this.room.takeCash(loser, DATA.forfeit.penalty, now) : 0
     if (winner) {
-      reward = this.room.recordWin(winner, { flawless: played && this.hits[w] === 0 }, now)
+      reward = this.room.recordWin(winner, { flawless: played && this.score[l] === 0 }, now)
       if (penalty) reward += this.room.bonusCash(winner, penalty, now)
     }
     let consolation = 0
     if (loser) consolation = this.room.recordLoss(loser, now, reason)
-    if (loser && !played) this.room.bubble(loser, punish ? 'Nooo, let me go! 😱' : 'NOOO! 😭')
-    if (winner) {
-      this.room.bubble(winner, punish ? 'Not so fast! 😤' : reason === 'forfeit' ? 'GG 👍' : 'Too easy! 😎')
-    }
+    if (loser && played) this.room.bubble(loser, 'NOOO! 😭')
+    if (winner) this.room.bubble(winner, reason === 'forfeit' ? 'GG 👍' : 'Too easy! 😎')
 
     this.room.broadcast('result', {
       table: this.id,
       winner: winner?.id ?? null,
       loser: loser?.id ?? null,
-      slaps: this.slaps.map((s) => s ?? []),
+      score: [...this.score],
       reward,
       consolation,
       penalty,
       reason,
-      // When the quitter's slaps land, so clients can hold the winner's dance.
-      punish: slapAt.length ? { count: slapAt.length, first: F.slapFirst, gap: F.slapGap } : null,
     })
     this.sync(now)
     // Round end: report leaderboard scores now rather than at the next batch.
     this.room.flushScores()
 
     const token = this.token
-    const stillHere = () => this.token === token && this.seats[l] === loser && loser && this.seats[w] === winner
-    slapAt.forEach((at, k) => {
-      this.room.clock.setTimeout(() => {
-        if (!stillHere()) return
-        const final = k === slapAt.length - 1
-        this.room.broadcast('fx', { kind: 'slap', id: loser.id, by: winner.id, final })
-        this.room.bubble(loser, final ? 'KNOCKED OUT 💫' : 'OUCH! 😵')
-      }, at * 1000)
-    })
-
-    // The loser is knocked out of their chair, then respawns back in the lobby while
-    // the winner keeps dancing on the table.
-    this.room.clock.setTimeout(
-      () => {
-        if (this.token !== token || this.seats[l] !== loser || !loser) return
-        this.unseat(l)
-        loser.respawn()
-        this.sync(Date.now())
-      },
-      (punish ? punishEnd + PUNISH_TAIL_S : T.loserRespawn) * 1000,
-    )
+    const stillSeated = () => this.token === token && loser && this.seats[l] === loser
+    this.room.clock.setTimeout(() => {
+      if (stillSeated()) this.room.broadcast('fx', { kind: 'eject', id: loser.id, by: winner?.id ?? '' })
+    }, EJECT_AT_S * 1000)
+    this.room.clock.setTimeout(() => {
+      if (!stillSeated()) return
+      this.unseat(l)
+      loser.respawn()
+      this.sync(Date.now())
+    }, T.loserRespawn * 1000)
   }
 
   tick(now) {
     if (this.phase === 'waiting' || now < this.endsAt) return
 
     if (this.phase === 'countdown') {
-      this.startHiding(now)
-    } else if (this.phase === 'hiding') {
-      // Too slow to hide: the server hides them for you.
-      this.slaps.forEach((s, i) => {
-        if (s === null) {
-          this.slaps[i] = randomCells(C.slaps)
-          this.seats[i]?.toast('Out of time! Your slaps were hidden at random')
-        }
-      })
-      this.startEating(now)
-    } else if (this.phase === 'eating' && !this.pending) {
-      const slow = this.turn
-      this.timeouts[slow] += 1
-      if (this.timeouts[slow] >= 2) {
-        this.finish(1 - slow, slow, 'afk', now)
-      } else {
-        this.seats[slow]?.toast('Too slow! You grabbed a random chip')
-        const open = Array.from({ length: CELLS }, (_, c) => c).filter((c) => this.plates[1 - slow][c] === FULL)
-        this.bite(slow, randomItem(open), now)
-      }
+      this.startRound(now)
+    } else if (this.phase === 'target') {
+      this.startRunning(now)
+    } else if (this.phase === 'running') {
+      // Out of time: whoever hasn't pressed loses the round.
+      this.resolveRound(now)
+    } else if (this.phase === 'reveal') {
+      this.afterReveal(now)
     } else if (this.phase === 'ended') {
       this.unseat(0)
       this.unseat(1)
@@ -367,25 +330,34 @@ class Table {
     }
   }
 
+  /** A seat's synced time: secret until the reveal. */
+  shownTime(i) {
+    if (this.phase !== 'reveal' && this.phase !== 'ended') return HIDDEN
+    return this.pressed[i] ?? NO_PRESS
+  }
+
   privateState(i, now) {
     const o = 1 - i
     const ended = this.phase === 'ended'
+    let roundWinner = null
+    if (this.phase === 'reveal') roundWinner = this.roundWinner < 0 ? 'tie' : this.roundWinner === i ? 'me' : 'them'
     return {
       table: this.id,
       seat: i,
       phase: this.phase,
       endsInMs: Math.max(0, this.endsAt - now),
-      myPlate: this.plates[i].join(''),
-      theirPlate: this.plates[o].join(''),
-      mySlaps: this.slaps[i] ?? [],
-      theirSlaps: ended ? (this.slaps[o] ?? []) : [],
-      hidden: this.slaps[i] !== null,
-      opponentReady: this.slaps[o] !== null,
-      myHearts: this.hearts[i],
-      theirHearts: this.hearts[o],
-      myTurn: this.phase === 'eating' && this.turn === i && !this.pending,
-      theirTurn: this.phase === 'eating' && this.turn === o,
-      pending: this.pending,
+      /** Until the clock starts (negative once it has): turned into a local time on receipt. */
+      startInMs: this.startAt ? this.startAt - now : 0,
+      round: this.round,
+      target: this.target,
+      showMs: this.showMs,
+      myScore: this.score[i],
+      theirScore: this.score[o],
+      pressed: this.pressed[i] !== null,
+      theirPressed: this.pressed[o] !== null,
+      myTime: this.shownTime(i),
+      theirTime: this.shownTime(o),
+      roundWinner,
       won: ended && this.winner === i,
       opponent: this.seats[o]?.id ?? null,
     }
@@ -397,21 +369,25 @@ class Table {
    */
   sync(now = Date.now()) {
     const st = this.state
-    const ended = this.phase === 'ended'
+    const inRound = PLAYING.has(this.phase) || this.phase === 'ended'
     st.phase = this.phase
     st.seat0 = this.seats[0]?.id ?? ''
     st.seat1 = this.seats[1]?.id ?? ''
     st.chair0 = this.seats[0]?.profile.equippedChair ?? ''
     st.chair1 = this.seats[1]?.profile.equippedChair ?? ''
-    st.turn = this.phase === 'eating' ? (this.seats[this.turn]?.id ?? '') : ''
-    st.winner = ended ? (this.seats[this.winner]?.id ?? '') : ''
+    st.winner = this.phase === 'ended' ? (this.seats[this.winner]?.id ?? '') : ''
     st.endsAt = this.phase === 'waiting' ? 0 : this.endsAt
-    st.plate0 = this.plates[0].join('')
-    st.plate1 = this.plates[1].join('')
-    st.hearts0 = this.hearts[0]
-    st.hearts1 = this.hearts[1]
-    st.shown0 = ended ? (this.slaps[0] ?? []).map((c) => c.toString(36)).join('') : ''
-    st.shown1 = ended ? (this.slaps[1] ?? []).map((c) => c.toString(36)).join('') : ''
+    st.startAt = inRound ? this.startAt : 0
+    st.round = this.round
+    st.target = inRound ? this.target : 0
+    st.show = inRound ? this.showMs : 0
+    st.score0 = this.score[0]
+    st.score1 = this.score[1]
+    st.stop0 = this.phase === 'running' && this.pressed[0] !== null
+    st.stop1 = this.phase === 'running' && this.pressed[1] !== null
+    st.time0 = this.shownTime(0)
+    st.time1 = this.shownTime(1)
+    st.rwin = this.phase === 'reveal' ? this.roundWinner : -1
     this.seats.forEach((s, i) => s?.send('match', { match: this.privateState(i, now) }))
   }
 }

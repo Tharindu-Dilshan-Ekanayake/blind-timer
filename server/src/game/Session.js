@@ -3,6 +3,8 @@ const profiles = require('./profiles')
 
 const HALF = DATA.world.half
 const EMOTE_COOLDOWN_MS = 1500
+/** Smallest move (world units) or turn (radians) that counts as the player doing something. */
+const MOVE_EPSILON = 0.05
 const ANIM_COOLDOWN_MS = 800
 /** Bloxity emote catalogue ids are 24-character hex strings. */
 const ANIM_ID = /^[a-f0-9]{24}$/i
@@ -68,6 +70,12 @@ class Session {
     this.seat = null
     this.lastEmoteAt = 0
     this.lastAnimAt = 0
+    /**
+     * When the player last did anything (moved, tapped, clicked, played): the AFK
+     * check in GameRoom removes them after DATA.afk.kickSec without, warning first.
+     */
+    this.lastActiveAt = now
+    this.afkWarned = false
     /** Verified Bloxity account id, or '' for a guest. */
     this.userId = identity.userId
 
@@ -132,20 +140,36 @@ class Session {
     profiles.markDirty(this.profile)
   }
 
+  /** The player did something: resets their AFK clock (and clears a warning). */
+  markActive(now) {
+    this.lastActiveAt = now
+    if (this.afkWarned) {
+      this.afkWarned = false
+      this.send('afk', { warn: false })
+    }
+  }
+
   /** Routes one client message. `msg` is untrusted. */
   handle(type, msg, now) {
     msg = msg && typeof msg === 'object' ? msg : {}
+    // Position updates also arrive as a heartbeat while standing still: only an
+    // actual move counts as activity. Every other message is the player acting.
+    if (type === 'pos') {
+      if (this.onPos(msg)) this.markActive(now)
+      return undefined
+    }
+    // (Avatar updates are sent automatically, not by the player.)
+    if (type !== 'avatar') this.markActive(now)
     switch (type) {
-      case 'pos':
-        return this.onPos(msg)
+      case 'active':
+        // Sent by the client on input that sends nothing else (camera drags, menus).
+        return undefined
       case 'sit':
         return this.onSit(msg, now)
       case 'leave':
         return this.seat?.table.leave(this, now)
-      case 'hide':
-        return this.seat?.table.hide(this, msg.cells, now)
-      case 'eat':
-        return this.seat?.table.eat(this, msg.cell, now)
+      case 'press':
+        return this.seat?.table.press(this, msg.ms, now)
       case 'emote':
         return this.onEmote(msg, now)
       case 'buy':
@@ -167,15 +191,23 @@ class Session {
     }
   }
 
+  /** Moves the player; returns true if they actually moved or turned. */
   onPos(msg) {
-    if (this.seat) return
+    if (this.seat) return false
     const p = this.player
+    const before = { x: p.x, z: p.z, ry: p.ry, g: p.g }
     p.x = clamp(finite(msg.x, p.x), -HALF, HALF)
     p.y = clamp(finite(msg.y, 0), -5, 20)
     p.z = clamp(finite(msg.z, p.z), -HALF, HALF)
     p.ry = finite(msg.ry)
     p.s = clamp(finite(msg.s), 0, 20)
     p.g = Boolean(msg.g)
+    return (
+      Math.abs(p.x - before.x) > MOVE_EPSILON ||
+      Math.abs(p.z - before.z) > MOVE_EPSILON ||
+      Math.abs(p.ry - before.ry) > MOVE_EPSILON ||
+      p.g !== before.g
+    )
   }
 
   onSit(msg, now) {

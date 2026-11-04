@@ -1,5 +1,5 @@
 ---
-gameSlug: slap-chips
+gameSlug: blind-timer
 clientDir: client
 buildCommand: npm ci && npm run build
 distDir: client/dist
@@ -30,9 +30,8 @@ leaderboards:
     reset: none
 notApplicable:
   deathScreen: >-
-    A player cannot die. Losing a duel shows a short "knocked out" slump in the
-    chair and sends the player back to the lobby; it is not a death (confirmed by
-    the developer).
+    A player cannot die. Losing a duel launches the player out of their chair
+    (a short cartoon ejection) and sends them back to the lobby; it is not a death.
   rewardedAds: >-
     The game has no reward earned by watching an ad yet. Add a "watch ad" reward
     (e.g. open the mystery gift early) before turning rewarded ads on.

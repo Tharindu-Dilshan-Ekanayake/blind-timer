@@ -2,12 +2,13 @@ import { useMemo } from 'react'
 import { CanvasTexture, MeshBasicMaterial, PlaneGeometry } from 'three'
 
 import Instanced from './Instanced'
-import { ARCH, CHIP_BAG, DATA, FLOOR, FOUNTAIN, GUIDE_BOARD, LAMPS, SHOP_CHAIRS, TABLE, tableLocal, TREES } from './layout'
+import { ARCH, CRYSTALS, DATA, FLOOR, GEARS, GUIDE_BOARD, HOURGLASS, LAMPS, SHOWROOM_CHAIRS, STORE, TABLE, TOWER } from './layout'
 import { useDisposable } from './useDisposable'
 
 /**
- * Soft "baked" shadows on the ground under the props: tables, trees, the fountain,
- * the gate's pillars, the lamp posts, the shop pedestals and the boards. Used when
+ * Soft "baked" shadows on the ground under the props: tables, gears, crystals, the
+ * clock tower, the gate's pillars, the lamp posts, the showroom pedestals, the Store and
+ * the boards. Used when
  * realtime shadows are off (LOW), so the world keeps its depth: one instanced quad
  * mesh, one draw call, no shadow map.
  */
@@ -28,17 +29,18 @@ function createBlobTexture() {
 function shadowSpots() {
   const spots = []
   for (const t of DATA.tables) {
-    const [x, z] = tableLocal(t, 0, 0.4)
-    spots.push([x + 0.15, z, TABLE.width + 1.4, TABLE.depth + 2.6, t.ry])
+    spots.push([t.x + 0.15, t.z, TABLE.width + 1.2, TABLE.depth + 2 * TABLE.seatZ + 0.6, t.ry])
   }
-  for (const [x, z] of TREES) spots.push([x + 0.4, z, 4.2, 4.2, 0])
-  spots.push([0.4, 0.2, FOUNTAIN.radius * 2.5, FOUNTAIN.radius * 2.5, 0])
+  for (const [x, z, r] of GEARS) spots.push([x + 0.3, z, r * 2.2, 2.2, Math.atan2(-x, -z)])
+  for (const [x, z, size] of CRYSTALS) spots.push([x + 0.2, z, 2.4 * size, 2.4 * size, 0])
+  spots.push([TOWER.x + 0.5, TOWER.z + 0.2, TOWER.size * 1.6, TOWER.size * 1.6, 0])
   for (const side of [-1, 1]) spots.push([side * ARCH.halfWidth + 0.3, ARCH.z, 2.6, 2.6, 0])
   for (const [x, z] of LAMPS) spots.push([x + 0.2, z, 1.3, 1.3, 0])
-  for (const c of SHOP_CHAIRS) spots.push([c.shop[0] + 0.2, c.shop[1], 2.8, 2.8, 0])
+  for (const c of SHOWROOM_CHAIRS) spots.push([c.shop[0] + 0.2, c.shop[1], 2.8, 2.8, 0])
+  spots.push([STORE.x + 0.3, STORE.z, 6, 9.4, 0])
   for (const lb of DATA.leaderboards) spots.push([lb.x + 0.3, lb.z, 7, 1.8, lb.ry])
   spots.push([GUIDE_BOARD.x + 0.2, GUIDE_BOARD.z, 6, 1.6, GUIDE_BOARD.ry])
-  spots.push([CHIP_BAG.x + 0.3, CHIP_BAG.z, 3.6, 2.8, 0])
+  spots.push([HOURGLASS.x + 0.3, HOURGLASS.z, 3.4, 3.4, 0])
   return spots
 }
 

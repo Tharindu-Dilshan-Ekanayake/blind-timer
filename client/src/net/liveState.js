@@ -52,10 +52,9 @@ export const effectQueue = []
 
 /**
  * Seated players' table actions, for their pose (see seatPose): id (SELF_ANCHOR for
- * the local player) -> epoch ms each started — `eat`, `slapping` (with `dx`, `dz`
- * towards the player being slapped and `arm`), `slap` (with `side`, which way the
- * hit knocks them), `fly` (knocked out of the chair, towards `ax`, `az`) and
- * `danceAt` (when the winner may start dancing).
+ * the local player) -> epoch ms each started — `press` (stopping the clock), `zap`
+ * (lost a round, with `side`, which way it jolts them), `fly` (ejected from the
+ * chair, towards `ax`, `az`) and `danceAt` (when the winner may start dancing).
  */
 export const actionFx = new Map()
 

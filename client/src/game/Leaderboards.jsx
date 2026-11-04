@@ -46,9 +46,9 @@ function formatValue(value, format) {
 
 function drawBoard(canvas, title, rows, format) {
   const ctx = canvas.getContext('2d')
-  ctx.fillStyle = '#2b6f8f'
+  ctx.fillStyle = '#2a2f62'
   ctx.fillRect(0, 0, TEX_W, TEX_H)
-  ctx.fillStyle = '#1f566f'
+  ctx.fillStyle = '#1b1f48'
   ctx.fillRect(0, 0, TEX_W, 78)
 
   ctx.textBaseline = 'middle'
@@ -132,7 +132,7 @@ export function Leaderboards() {
   const res = useDisposable(
     () => ({
       box: new BoxGeometry(1, 1, 1),
-      wood: new MeshLambertMaterial({ color: '#7a4526' }),
+      wood: new MeshLambertMaterial({ color: '#3b3456' }),
       face: new PlaneGeometry(BOARD_W, BOARD_H),
     }),
     [],
